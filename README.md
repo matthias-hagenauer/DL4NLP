@@ -1,4 +1,4 @@
-# Project 4: Model Compression for Machine Translation in Large Language Models
+# Model Compression for Machine Translation in Large Language Models
 
 ## 📖 Project Description
 This project explores the application of **model compression techniques** for **machine translation (MT)** tasks in **ALMA large language models (LLMs)**.  
