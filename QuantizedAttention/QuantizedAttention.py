@@ -2,6 +2,9 @@ import torch
 from torch import nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+# this needs rework.. turns our llama attention is not used the way we overwrite it here. 
+# I will have a look another day.
+
 ###############################################
 # Quantization helpers
 ###############################################
