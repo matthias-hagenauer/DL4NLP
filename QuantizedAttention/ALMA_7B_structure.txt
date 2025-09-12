@@ -1,3 +1,5 @@
+Model has 32 layers in total.
+
 ---------- Layer 0 -------------
 LlamaDecoderLayer(
     (self_attn): LlamaAttention(
