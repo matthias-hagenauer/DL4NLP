@@ -1,5 +1,0 @@
-tiktoken
-protobuf
-transformers
-torch
-accelerate
