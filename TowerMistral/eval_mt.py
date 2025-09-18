@@ -1,5 +1,6 @@
 import evaluate
 from transformers import pipeline
+import re
 
 import argparse
 import json
@@ -85,33 +86,35 @@ def format_prompt(tokenizer, src_text: str, src_lang: str, tgt_lang: str) -> str
     return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
 
-def translate_batch(
-    items: List[Dict],
-    model_id: str = MODEL_ID,
-    max_new_tokens: int = 256,
-) -> List[str]:
-    """Translate a mixed-language batch using instruction prompts."""
+def translate_batch(items, model_id=MODEL_ID, max_new_tokens=256):
     pipe = pipeline("text-generation", model=model_id, device_map="auto")
     tokenizer = pipe.tokenizer
 
     prompts = [format_prompt(tokenizer, it["src"], it["src_lang"], it["tgt_lang"]) for it in items]
-    outputs = pipe(prompts, max_new_tokens=max_new_tokens, do_sample=False)
+    # Ask pipeline not to return the prompt to simplify extraction (some backends ignore this; we still guard below)
+    outputs = pipe(prompts, max_new_tokens=max_new_tokens, do_sample=False, return_full_text=False)
 
     preds = []
-    for out in outputs:
-        full = out[0]["generated_text"]
-        # Heuristic: strip everything up to the final "{TargetLang}:"
-        # so we keep only the model’s continuation in the target language.
-        # e.g., "... English:" → take the tail.
-        # If label not found, just trim.
-        tails = []
-        for it in LANG_NAME.values():
-            marker = f"{it}:"
-            if marker in full:
-                tails.append(full.split(marker, 1)[-1])
-        if tails:
-            full = tails[-1]
-        preds.append(full.strip().split("\n")[0].strip())
+    for prompt, out, it in zip(prompts, outputs, items):
+        gen = out[0]["generated_text"]
+
+        # If the backend ignored return_full_text=False, remove the prompt prefix.
+        if gen.startswith(prompt):
+            cont = gen[len(prompt):]
+        else:
+            cont = gen
+
+        # If the model echoed the "TargetLang:" label, strip it once.
+        target_label = f"{lang_name(it['tgt_lang'])}:"
+        if target_label in cont:
+            cont = cont.split(target_label, 1)[-1]
+
+        # Trim common stop tokens and artifacts
+        cont = re.split(r"(?:</s>|<\|endoftext\|>|Assistant:)", cont)[0]
+
+        # Final clean-up—keep the whole continuation (no newline truncation!)
+        pred = cont.strip().strip('"').strip("“”").strip()
+        preds.append(pred)
     return preds
 
 
