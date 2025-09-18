@@ -19,7 +19,7 @@ messages = [
 prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
 # Generate output with vLLM
-responses = llm.generate([prompt], max_tokens=256, do_sample=False)
+responses = llm.generate([prompt])
 
 # vLLM returns an iterator of response objects
 for r in responses:
