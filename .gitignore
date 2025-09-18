@@ -6,3 +6,4 @@ __pycache__/
 slurm-*.out
 *.slurm
 slurm_outputs/
+slurm_*.out
