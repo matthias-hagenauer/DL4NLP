@@ -23,4 +23,4 @@ responses = llm.generate([prompt])
 
 # vLLM returns an iterator of response objects
 for r in responses:
-    print(r.text)
+    print(r)
