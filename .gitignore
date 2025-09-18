@@ -1,3 +1,9 @@
 myvenv/
 output/
 __pycache__/
+
+# SLURM output files
+slurm-*.out
+*.slurm
+slurm_outputs/
+slurm_*.out
