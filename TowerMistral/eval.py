@@ -4,6 +4,7 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
 import evaluate
 import sacrebleu
+from sacrebleu.metrics import CHRF as SacreCHRF
 
 # -------------------
 # 1. Load model + tokenizer (quantized 4-bit with bitsandbytes)
@@ -69,3 +70,16 @@ print("BLEU score (evaluate):", results["bleu"])
 
 bleu_score = sacrebleu.corpus_bleu(predictions, [references])
 print("BLEU score (sacrebleu):", bleu_score.score)
+
+# -------------------
+# 5. Compute chrF (evaluate + sacrebleu)
+# -------------------
+# evaluate.chrf expects references as List[List[str]]
+chrf_metric = evaluate.load("chrf")
+chrf_results = chrf_metric.compute(predictions=predictions, references=[[r] for r in references])
+print("chrF (evaluate):", chrf_results["score"])
+
+# sacrebleu CHRF (same inputs as corpus_bleu)
+sacre_chrf = SacreCHRF(word_order=0)  # default chrF++
+chrf_score = sacre_chrf.corpus_score(predictions, [references])
+print("chrF (sacrebleu):", chrf_score.score)
