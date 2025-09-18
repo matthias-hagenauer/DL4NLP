@@ -17,5 +17,5 @@ cd $HOME/dl4nlp/DL4NLP/TowerMistral
 # Activate your environment
 source activate nlp
 # Run your code
-srun python eval_chrf.py
+srun python eval_mt.py --data pairs.jsonl --max_new_tokens=256 --comet_gpus=1 --comet_batch=8
 # srun python eval.py
