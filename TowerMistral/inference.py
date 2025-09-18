@@ -1,22 +1,26 @@
-# Install transformers from source - only needed for versions <= v4.34
-# pip install git+https://github.com/huggingface/transformers.git
-# pip install accelerate
+# Install vllm
+# pip install vllm
 
-import torch
-from transformers import pipeline
+from vllm import LLM
+from transformers import AutoTokenizer
 
-pipe = pipeline("text-generation", model="Unbabel/TowerInstruct-Mistral-7B-v0.2", torch_dtype=torch.bfloat16, device_map="auto")
-# We use the tokenizer’s chat template to format each message - see https://huggingface.co/docs/transformers/main/en/chat_templating
+# Load the Hugging Face tokenizer
+tokenizer = AutoTokenizer.from_pretrained("Unbabel/TowerInstruct-Mistral-7B-v0.2")
+
+# Initialize the vLLM model
+llm = LLM("Unbabel/TowerInstruct-Mistral-7B-v0.2", tensor_parallel_size=1, dtype="bfloat16")
+
+# Prepare your messages
 messages = [
     {"role": "user", "content": "Translate the following text from Portuguese into English.\nPortuguese: Um grupo de investigadores lançou um novo modelo para tarefas relacionadas com tradução.\nEnglish:"},
 ]
-prompt = pipe.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-outputs = pipe(prompt, max_new_tokens=256, do_sample=False)
-print(outputs[0]["generated_text"])
 
-# <|im_start|>user
-# Translate the following text from Portuguese into English.
-# Portuguese: Um grupo de investigadores lançou um novo modelo para tarefas relacionadas com tradução.
-# English:<|im_end|>
-# <|im_start|>assistant
-# A group of researchers has launched a new model for translation-related tasks.
+# Apply the chat template (same as transformers)
+prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+# Generate output with vLLM
+responses = llm.generate([prompt], max_tokens=256, do_sample=False)
+
+# vLLM returns an iterator of response objects
+for r in responses:
+    print(r.text)
