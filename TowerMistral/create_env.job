@@ -26,6 +26,9 @@ pip install --index-url https://download.pytorch.org/whl/cu118 torch torchvision
 
 # Core libs
 pip install transformers accelerate evaluate sentencepiece sacrebleu
+pip install datasets
+pip install bitsandbytes
+pip install "unbabel-comet>=2.0.0"
 
 # Optional quality-of-life
 pip install rich tqdm
