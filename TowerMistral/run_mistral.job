@@ -13,8 +13,8 @@ module load 2023
 module load Anaconda3/2023.07-2
 
 # Your job starts in the directory where you call sbatch
-cd $HOME/dl4nlp
+cd $HOME/DL4NLP/TowerMistral
 # Activate your environment
 source activate nlp
 # Run your code
-srun python mistral.py
+srun python inference.py
