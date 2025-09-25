@@ -25,12 +25,44 @@ These resources provide background on the motivation, methods, and trade-offs in
 ---
 
 ## 📂 Dataset
-We make use of the [ALMA dataset](https://github.com/fe1ixxu/ALMA), which includes machine translation data for multiple language pairs.  
+We make use of the [ALMA dataset](https://github.com/fe1ixxu/ALMA), which includes machine translation data for multiple language pairs. (NOT TRUE: FIX) 
 
 This dataset supports:
 - Training and fine-tuning
 - Knowledge distillation setups
 - Evaluation of compressed models
+
+---
+
+## Environment setup
+
+### Prerequisites
+- **Python** 3.9–3.11 (tested on 3.10)
+- **NVIDIA GPU + CUDA** (cluster provides CUDA 11.8 via modules)
+- Internet access to Hugging Face for model downloads
+
+> COMET is **optional** (only needed if you run `--eval_metrics ... comet`). See **Optional: COMET** below.
+
+### 1. Create a Conda environment
+
+```bash
+conda create -y -n nlp python=3.10
+conda activate nlp
+
+pip install --upgrade pip
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+pip install -r requirements.txt
+
+# Extra runtime helpers that models/metrics often need:
+pip install sentencepiece protobuf safetensors
+```
+
+### Optional: COMET metric (for --eval_metrics comet)
+
+```bash
+pip install "unbabel-comet>=2.2.6"
+```
 
 ---
 
