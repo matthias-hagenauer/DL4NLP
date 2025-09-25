@@ -41,7 +41,7 @@ This dataset supports:
 - **NVIDIA GPU + CUDA** (cluster provides CUDA 11.8 via modules)
 - Internet access to Hugging Face for model downloads
 
-> COMET is **optional** (only needed if you run `--eval_metrics ... comet`). See **Optional: COMET** below.
+COMET is **optional** (only needed if you run `--eval_metrics ... comet`). See **Optional: COMET** below.
 
 ### 1. Create a Conda environment
 
