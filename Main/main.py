@@ -12,7 +12,7 @@ from statistics import mean
 from collections import defaultdict
 
 from data import load_jsonl_pairs
-from models import build_model
+from model import build_model
 from binning import parse_bins, assign_bin, coerce_esa
 from eval import chrf_segment_scores, sentence_bleu_scores, bleu_corpus, comet22_scores
 
@@ -42,15 +42,7 @@ def _valid_pred_ref(r: Dict[str, Any]) -> bool:
     return isinstance(r.get("pred"), str) and isinstance(r.get("ref"), str) and r["ref"].strip() != ""
 
 
-def _group_reduce_mean(
-    rows: List[Dict[str, Any]],
-    metric_key: str,
-    key_fn: Callable[[Dict[str, Any]], str],
-) -> Dict[str, Dict[str, Optional[float]]]:
-    """
-    Mean of a per-row metric (e.g., 'chrf', 'sbleu', 'comet_seg') grouped by key_fn.
-    Returns {group: {"count": int, "mean": float|None}}
-    """
+def _group_reduce_mean(rows: List[Dict[str, Any]], metric_key: str, key_fn: Callable[[Dict[str, Any]], str]) -> Dict[str, Dict[str, Optional[float]]]:
     groups: Dict[str, List[float]] = defaultdict(list)
     counts: Dict[str, int] = defaultdict(int)
     for r in rows:
@@ -66,14 +58,7 @@ def _group_reduce_mean(
     return out
 
 
-def _group_bleu(
-    rows: List[Dict[str, Any]],
-    key_fn: Callable[[Dict[str, Any]], str],
-) -> Dict[str, Dict[str, Optional[float]]]:
-    """
-    Corpus BLEU per group using bleu_corpus on valid (pred, ref) pairs.
-    Returns {group: {"count": int, "bleu": float|None}}
-    """
+def _group_bleu(rows: List[Dict[str, Any]], key_fn: Callable[[Dict[str, Any]], str]) -> Dict[str, Dict[str, Optional[float]]]:
     preds: Dict[str, List[str]] = defaultdict(list)
     refs: Dict[str, List[str]] = defaultdict(list)
     counts: Dict[str, int] = defaultdict(int)
@@ -102,7 +87,7 @@ def main() -> None:
     ap.add_argument("--device_map", default="auto")
     ap.add_argument("--max_new_tokens", type=int, default=256)
     ap.add_argument("--bins", default="0-30,30-60,60-100", help='ESA bins like "0-30,30-60,60-100" (lo,hi] semantics).')
-    ap.add_argument("--eval_metrics", default="chrf,sbleu", help="Subset of {chrf,sbleu,bleu,comet} (comma-separated).")
+    ap.add_argument("--eval_metrics", default="chrf", help="Subset of {chrf,sbleu,bleu,comet} (comma-separated).")
     ap.add_argument("--comet_gpus", type=int, default=1)
     ap.add_argument("--comet_batch", type=int, default=8)
     args = ap.parse_args()
@@ -123,7 +108,7 @@ def main() -> None:
         esa = coerce_esa(it.get("meta", {}).get("esa_score"))
         label = assign_bin(esa, bins)
         uid = it.get("meta", {}).get("line_id", idx)
-        langpair = f"{it['src_lang']}→{it['tgt_lang']}"
+        langpair = f"{it['src_lang']}-{it['tgt_lang']}"
         rows.append(
             {
                 "id": uid,

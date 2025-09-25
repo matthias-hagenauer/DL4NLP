@@ -21,17 +21,14 @@ def load_jsonl_pairs(path: str) -> List[Pair]:
                 continue
             rec = json.loads(line)
 
-            # Basic schema check
             if not REQUIRED_FIELDS.issubset(rec):
                 continue
 
-            # Parse "en-ru" → ("en","ru")
             try:
                 src_code, tgt_code = str(rec["langs"]).lower().split("-")
             except Exception:
                 continue
 
-            # Preserve any extra fields as metadata
             meta: Dict[str, Any] = {k: v for k, v in rec.items() if k not in {"langs", "src", "tgt"}}
 
             pairs.append(

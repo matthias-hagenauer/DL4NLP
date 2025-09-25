@@ -57,7 +57,6 @@ class HFPipelineModel:
       - quant='8bit' → load_in_8bit=True
       - quant='4bit' → load_in_4bit=True with NF4 (BitsAndBytesConfig)
     """
-
     pipe: Pipeline
     tokenizer: PreTrainedTokenizerBase
 
@@ -94,7 +93,7 @@ class HFPipelineModel:
         prompts: List[str] = [
             _build_prompt(self.tokenizer, it["src"], it["src_lang"], it["tgt_lang"]) for it in items
         ]
-        outputs: List[List[Dict[str, Any]]] = self.pipe(prompts, **params)  # type: ignore[call-arg]
+        outputs: List[List[Dict[str, Any]]] = self.pipe(prompts, **params) 
 
         preds: List[str] = []
         for prompt, out, it in zip(prompts, outputs, items):
