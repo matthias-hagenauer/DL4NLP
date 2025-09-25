@@ -2,10 +2,10 @@
 
 #SBATCH --partition=gpu_mig
 #SBATCH --gpus=1
-#SBATCH --job-name=Train
+#SBATCH --job-name=Run
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=9
-#SBATCH --time=01:00:00
+#SBATCH --time=04:00:00
 #SBATCH --output=output/slurm_output_%A.out
 
 module purge
@@ -14,7 +14,24 @@ module load Miniconda3/24.7.1-0
 
 source activate nlp
 
-srun python main.py \
+# Default
+# srun python main.py \
+#     --data data/subset.jsonl \
+#     --outdir results/ \
+#     --eval_metrics chrf,bleu
+
+# 8-bit quantization
+python main.py \
     --data data/subset.jsonl \
-    --outdir results/ \
+    --outdir runs/exp1_bnb8 \
+    --model_id Unbabel/TowerInstruct-Mistral-7B-v0.2 \
+    --quant 8bit \
     --eval_metrics chrf,bleu
+
+# 4-bit quantization
+    # python main.py \
+    # --data data/subset.jsonl \
+    # --outdir runs/exp1_bnb4 \
+    # --model_id Unbabel/TowerInstruct-Mistral-7B-v0.2 \
+    # --quant 4bit \
+    # --eval_metrics chrf,bleu
