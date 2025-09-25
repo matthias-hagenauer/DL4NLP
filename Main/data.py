@@ -1,47 +1,51 @@
-from __future__ import annotations
-from typing import Any, Dict, List, TypedDict
 import json
-
-class Pair(TypedDict):
-    src_lang: str
-    tgt_lang: str
-    src: str
-    tgt: str
-    meta: Dict[str, Any]
-
 
 REQUIRED_FIELDS = {"langs", "src", "tgt"}
 
-
-def load_jsonl_pairs(path: str) -> List[Pair]:
-    pairs: List[Pair] = []
+def load_jsonl_pairs(path):
+    """
+    Load pairs from a JSONL file.
+    Each line should be a JSON object with at least: langs, src, tgt.
+    langs must be in the form "srcLang-tgtLang".
+    Returns a list of dicts with: src_lang, tgt_lang, src, tgt, meta.
+    """
+    pairs = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
-            if not line.strip():
+            line = line.strip()
+            if not line:
                 continue
-            rec = json.loads(line)
-
-            if not REQUIRED_FIELDS.issubset(rec):
-                continue
-
             try:
-                src_code, tgt_code = str(rec["langs"]).lower().split("-")
+                rec = json.loads(line)
             except Exception:
                 continue
 
-            meta: Dict[str, Any] = {k: v for k, v in rec.items() if k not in {"langs", "src", "tgt"}}
+            # must contain required fields
+            if not all(k in rec for k in REQUIRED_FIELDS):
+                continue
 
-            pairs.append(
-                Pair(
-                    src_lang=src_code,
-                    tgt_lang=tgt_code,
-                    src=str(rec["src"]),
-                    tgt=str(rec["tgt"]),
-                    meta=meta,
-                )
-            )
+            # langs must split into two codes
+            try:
+                parts = str(rec["langs"]).lower().split("-")
+                src_code, tgt_code = parts[0], parts[1]
+            except Exception:
+                continue
+
+            # meta = everything else
+            meta = {}
+            for k, v in rec.items():
+                if k not in ("langs", "src", "tgt"):
+                    meta[k] = v
+
+            pairs.append({
+                "src_lang": src_code,
+                "tgt_lang": tgt_code,
+                "src": str(rec["src"]),
+                "tgt": str(rec["tgt"]),
+                "meta": meta,
+            })
 
     if not pairs:
-        raise ValueError(f"No valid records found in {path}")
+        raise ValueError("No valid records found in %s" % path)
 
     return pairs

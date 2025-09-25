@@ -14,8 +14,7 @@ module load Miniconda3/24.7.1-0
 
 source activate nlp
 
-cd $HOME/dl4nlp/DL4NLP/Main/
 srun python main.py \
-    --data data/pairs.jsonl \
+    --data data/subset.jsonl \
     --outdir results/ \
     --eval_metrics chrf,bleu
