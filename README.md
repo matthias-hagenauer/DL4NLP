@@ -54,8 +54,9 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 pip install -r requirements.txt
 
-# Extra runtime helpers that models/metrics often need:
+# Extra runtime helpers that models need:
 pip install sentencepiece protobuf safetensors
+# !pip install llama-cpp-python
 ```
 
 ### Optional: COMET metric (for --eval_metrics comet)
