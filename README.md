@@ -19,6 +19,7 @@ You are free to leverage the **ALMA training data** for any purpose, including:
 ## 📚 Related Work
 - [A Survey on Model Compression for Large Language Models](https://arxiv.org/abs/2307.03172)  
 - [Tower: An Open Multilingual Large Language Model for Translation-Related Tasks](https://arxiv.org/abs/2402.17733)
+- [Estimating Machine Translation Difficulty](https://arxiv.org/pdf/2508.10175)
 
 These resources provide background on the motivation, methods, and trade-offs in compressing LLMs.
 
