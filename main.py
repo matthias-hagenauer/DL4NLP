@@ -94,24 +94,49 @@ def group_corpus_bleu(rows, key_fn):
 
 def main():
     ap = argparse.ArgumentParser(description="Translate, evaluate, and ESA-bin results (simplified).")
+
     ap.add_argument("--data", required=True, help="Path to JSONL with fields: src_lang, tgt_lang, src, tgt (+ meta.esa_score).")
-    ap.add_argument("--outdir", required=True, help="Directory to write outputs.")
-    ap.add_argument("--model_id", default="Unbabel/TowerInstruct-Mistral-7B-v0.2")
+
+    # Single switch: TM, TM_2bit, TM_3bit, TM_4bit, TM_5bit, TM_6bit, TM_8bit, or any HF id
+    ap.add_argument("--model_id", default="TM",
+                    help="Model id: TM (HF baseline), TM_2bit..TM_8bit (GGUF), or any HF model id.")
+
+    ap.add_argument("--outdir", default=None, help="Output dir (default: results/<model_id>).")
     ap.add_argument("--device_map", default="auto")
     ap.add_argument("--max_new_tokens", type=int, default=256)
-    ap.add_argument("--bins", default="0-30,30-60,60-100", help='ESA bins like "0-30,30-60,60-100" with (lo,hi] semantics.')
+    ap.add_argument("--bins", default="0-30,30-60,60-100",
+                    help='ESA bins like "0-30,30-60,60-100" with (lo,hi] semantics.')
     ap.add_argument("--eval_metrics", default="chrf", help="Comma-separated subset of {chrf,bleu,comet}.")
     ap.add_argument("--comet_gpus", type=int, default=1)
     ap.add_argument("--comet_batch", type=int, default=8)
+
+    # GGUF optional overrides (only matter for TM_*bit)
+    ap.add_argument("--gguf_repo", default=None, help="Override HF repo for GGUF.")
+    ap.add_argument("--gguf_file", default=None, help="Override filename inside HF repo for GGUF.")
+    ap.add_argument("--gguf_path", default=None, help="Override local path to .gguf.")
+    ap.add_argument("--n_ctx", type=int, default=4096, help="llama.cpp context length")
+    ap.add_argument("--n_gpu_layers", type=int, default=0, help="llama.cpp GPU offload layers (0=CPU).")
+
     args = ap.parse_args()
 
+    # Default outdir if not provided
+    if not args.outdir:
+        args.outdir = f"results/{args.model_id}"
     ensure_dir(args.outdir)
 
     # 1) Load data
     items = load_jsonl_pairs(args.data)
 
     # 2) Build model & translate
-    model = build_model(model_id=args.model_id, device_map=args.device_map)
+    model = build_model(
+        model_id=args.model_id,
+        device_map=args.device_map,
+        gguf_repo=args.gguf_repo,
+        gguf_file=args.gguf_file,
+        gguf_path=args.gguf_path,
+        n_ctx=args.n_ctx,
+        n_gpu_layers=args.n_gpu_layers,
+    )
     preds = model.translate_batch(items, max_new_tokens=args.max_new_tokens)
 
     # 3) Attach ESA score/bin

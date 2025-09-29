@@ -1,7 +1,29 @@
 import re
 from transformers import pipeline
+import os
 
 DEFAULT_MODEL_ID = "Unbabel/TowerInstruct-Mistral-7B-v0.2"
+
+GGUF_DEFAULTS = {
+    "TM_2bit": ("models/gguf/2bit/TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf"),
+    "TM_3bit": ("models/gguf/3bit/TowerInstruct-Mistral-7B-v0.2-Q3_K_L.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q3_K_L.gguf"),
+    "TM_4bit": ("models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf"),
+    "TM_5bit": ("models/gguf/5bit/TowerInstruct-Mistral-7B-v0.2-Q5_K_M.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q5_K_M.gguf"),
+    "TM_6bit": ("models/gguf/6bit/TowerInstruct-Mistral-7B-v0.2-Q6_K.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q6_K.gguf"),
+    "TM_8bit": ("models/gguf/8bit/TowerInstruct-Mistral-7B-v0.2-Q8_0.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q8_0.gguf"),
+}
 
 LANG_NAME = {
     "en": "English",  "pt": "Portuguese", "es": "Spanish", "fr": "French",
@@ -46,6 +68,61 @@ def _collect_eos_ids(tokenizer):
         pass
     eos_ids = list(dict.fromkeys(eos_ids))
     return eos_ids
+
+# ---------------- NEW: GGUF backend (llama.cpp) ----------------
+class GGUFModel:
+    """
+    Loads a local .gguf file or pulls from Hugging Face via llama.cpp.
+    Works on CPU; can use GPU if llama-cpp-python was installed with CUDA.
+    """
+    def __init__(self, repo_id=None, filename=None, model_path=None,
+                 n_ctx=4096, n_gpu_layers=0, **kwargs):
+        try:
+            from llama_cpp import Llama
+        except Exception as e:
+            raise RuntimeError("Please `pip install llama-cpp-python` first.") from e
+
+        if model_path:
+            self.llm = Llama(model_path=model_path, n_ctx=n_ctx,
+                             n_gpu_layers=n_gpu_layers, **kwargs)
+        else:
+            # pulls weights from HF the first time and caches them
+            self.llm = Llama.from_pretrained(
+                repo_id=repo_id, filename=filename,
+                n_ctx=n_ctx, n_gpu_layers=n_gpu_layers, **kwargs
+            )
+
+        # No tokenizer object here; we pass None to _build_prompt
+        self.tokenizer = None
+
+    def translate_batch(self, items, **gen_kwargs):
+        max_new_tokens = gen_kwargs.get("max_new_tokens", 256)
+        do_sample      = gen_kwargs.get("do_sample", False)
+        temperature    = (gen_kwargs.get("temperature", 0.7) if do_sample else 0.0)
+
+        preds = []
+        for it in items:
+            prompt = _build_prompt(None, it.get("src",""),
+                                   it.get("src_lang","en"),
+                                   it.get("tgt_lang","en"))
+
+            # plain completion interface is robust for instruct models
+            out = self.llm.create_completion(
+                prompt=prompt,
+                max_tokens=max_new_tokens,
+                temperature=temperature,
+                stop=["\n\n", "</s>", "<|endoftext|>", "Assistant:"]
+            )
+            text = out["choices"][0]["text"]
+            # light cleanup like the HF path does
+            target_label = _lang_name(it.get("tgt_lang",""))
+            label_str = f"{target_label}:"
+            if label_str in text:
+                text = text.split(label_str, 1)[-1]
+            text = re.split(r"(?:</s>|<\|endoftext\|>|Assistant:)", text)[0]
+            preds.append(text.strip().strip('"').strip("“”").strip())
+        return preds
+# ---------------------------------------------------------------
 
 class HFPipelineModel:
     """Simple HF pipeline wrapper (no quantization)."""
@@ -127,5 +204,34 @@ class HFPipelineModel:
 
         return preds
 
-def build_model(model_id=None, device_map="auto"):
-    return HFPipelineModel(model_id=model_id, device_map=device_map)
+def build_model(model_id=None, device_map="auto",
+                gguf_repo=None, gguf_file=None, gguf_path=None,
+                n_ctx=4096, n_gpu_layers=0):
+    """
+    Single entry point:
+      - model_id == "TM"                 -> HF baseline (Unbabel/TowerInstruct-Mistral-7B-v0.2)
+      - model_id in {"TM_2bit", ...}     -> GGUF quant under models/gguf/<bit>/..., fallback to HF repo if missing
+      - otherwise                        -> treat as Hugging Face model id
+    Optional overrides: gguf_path, gguf_repo, gguf_file
+    """
+    mid = model_id or "TM"
+
+    # Friendly HF baseline
+    if mid == "TM":
+        return HFPipelineModel(model_id=DEFAULT_MODEL_ID, device_map=device_map)
+
+    # Friendly GGUF variants
+    if mid in GGUF_DEFAULTS:
+        local_path_default, repo_default, file_default = GGUF_DEFAULTS[mid]
+        # allow explicit overrides
+        use_path = gguf_path or (local_path_default if os.path.exists(local_path_default) else None)
+        repo     = gguf_repo or repo_default
+        fname    = gguf_file or file_default
+
+        if use_path:
+            return GGUFModel(model_path=use_path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
+        else:
+            return GGUFModel(repo_id=repo, filename=fname, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
+
+    # Any other id -> assume HF hub id
+    return HFPipelineModel(model_id=mid, device_map=device_map)

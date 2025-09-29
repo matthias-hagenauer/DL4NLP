@@ -46,17 +46,38 @@ COMET is **optional** (only needed if you run `--eval_metrics ... comet`). See *
 ### 1. Create a Conda environment
 
 ```bash
+# Create env
 conda create -y -n nlp python=3.10
-conda activate nlp
+source activate nlp
 
+# Upgrade pip
 pip install --upgrade pip
+
+# Install PyTorch (CUDA 11.8 build, works on Snellius A100 GPUs)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
+# Install project requirements (Transformers baseline, metrics, etc.)
 pip install -r requirements.txt
 
-# Extra runtime helpers that models need:
+# Extra helpers some models/metrics need
 pip install sentencepiece protobuf safetensors
-# !pip install llama-cpp-python
+
+# --- GGUF backend (quantized TowerMistral) ---
+# 1) Install llama.cpp Python binding (CUDA 12.2 build, GPU offload support)
+pip install --upgrade --no-cache-dir \
+  --index-url https://abetlen.github.io/llama-cpp-python/whl/cu122 \
+  --extra-index-url https://pypi.org/simple \
+  llama-cpp-python==0.3.16
+
+# 2) Install CUDA 12.2 runtime libraries (needed by llama-cpp wheel)
+pip install "nvidia-cuda-runtime-cu12==12.2.*" "nvidia-cublas-cu12==12.2.*"
+
+# 3) Ensure a new enough C++ runtime (libstdc++ ≥ 13)
+conda install -y -c conda-forge "libstdcxx-ng>=13" "libgcc-ng>=13"
+
+chmod +x setup_llamacpp_cuda12.sh
+bash setup_llamacpp_cuda12.sh
+conda deactivate && conda activate nlp
 ```
 
 ### Optional: COMET metric (for --eval_metrics comet)
@@ -84,15 +105,34 @@ python main.py \
 ```
 
 
-### Download 2-bit Tower Mistral model (GGUF format)
+### Download quantized Tower Mistral model (GGUF format)
 
 ```bash
-# Create a models directory in your home folder if it doesn't exist,
-# then change into that directory so the download saves there
-mkdir -p ~/models && cd ~/models && \
+chmod +x get_tm_gguf.sh
+bash get_tm_gguf.sh
+```
 
-# Download the 2-bit (Q2_K) GGUF model file from Hugging Face and
-# save it locally with a clear filename
-wget -O TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf \
-"https://huggingface.co/tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF/resolve/main/TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf?download=true"
+### Run examples TM baseline + quantized versions
+
+```bash
+# Baseline HuggingFace TowerMistral
+python main.py --model_id TM --data data/subset.jsonl
+
+# 2-bit quantized GGUF (local if available, else HF)
+python main.py --model_id TM_2bit --data data/subset.jsonl --n_gpu_layers 40
+
+# 3-bit quantized GGUF
+python main.py --model_id TM_3bit --data data/subset.jsonl --n_gpu_layers 40
+
+# 4-bit quantized GGUF (with explicit local override)
+python main.py --model_id TM_4bit --gguf_path models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf --data data/subset.jsonl --n_gpu_layers 40
+
+# 5-bit quantized GGUF
+python main.py --model_id TM_5bit --data data/subset.jsonl --n_gpu_layers 40
+
+# 6-bit quantized GGUF
+python main.py --model_id TM_6bit --data data/subset.jsonl --n_gpu_layers 40
+
+# 8-bit quantized GGUF
+python main.py --model_id TM_8bit --data data/subset.jsonl --n_gpu_layers 40
 ```
