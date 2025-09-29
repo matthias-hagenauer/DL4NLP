@@ -7,3 +7,7 @@ slurm-*.out
 *.slurm
 slurm_outputs/
 slurm_*.out
+
+models/
+models/*
+/models/
