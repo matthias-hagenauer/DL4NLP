@@ -21,10 +21,4 @@ source activate difficulty
 # Upgrade pip
 python -m pip install --upgrade pip
 
-git clone git@github.com:prosho-97/guardians-mt-eval.git
-ls
-cd guardians-mt-eval
-
-pip install -e .
-
 pip install git+https://github.com/huggingface/transformers.git
