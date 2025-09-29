@@ -23,5 +23,5 @@ python -m pip install --upgrade pip
 
 git clone git@github.com:prosho-97/guardians-mt-eval.git
 ls
-cd gaurdians-mt-eval
+cd guardians-mt-eval
 pip install -e .
