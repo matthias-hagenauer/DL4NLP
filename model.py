@@ -1,4 +1,5 @@
 import re
+from transformers import pipeline
 
 DEFAULT_MODEL_ID = "Unbabel/TowerInstruct-Mistral-7B-v0.2"
 
@@ -22,7 +23,6 @@ def _build_prompt(tokenizer, src_text, src_lang, tgt_lang):
         "{tgt}:"
     ).format(src=_lang_name(src_lang), tgt=_lang_name(tgt_lang), text=src_text)
 
-    # Use chat template if available (HF chat models)
     if tokenizer is not None and hasattr(tokenizer, "apply_chat_template"):
         messages = [{"role": "user", "content": content}]
         try:
@@ -30,92 +30,59 @@ def _build_prompt(tokenizer, src_text, src_lang, tgt_lang):
                 messages, tokenize=False, add_generation_prompt=True
             )
         except Exception:
-            # Fall back to plain content if anything goes wrong
             pass
     return content
 
+def _collect_eos_ids(tokenizer):
+    """Include regular EOS and chat end-of-message if present."""
+    eos_ids = []
+    if getattr(tokenizer, "eos_token_id", None) is not None:
+        eos_ids.append(tokenizer.eos_token_id)
+    try:
+        im_end_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if im_end_id is not None and im_end_id != -1:
+            eos_ids.append(im_end_id)
+    except Exception:
+        pass
+    eos_ids = list(dict.fromkeys(eos_ids))
+    return eos_ids
 
 class HFPipelineModel:
-    """
-    Quantization options:
-      - quant='none' → standard weights (device_map respected)
-      - quant='8bit' → load_in_8bit=True (requires bitsandbytes)
-      - quant='4bit' → load_in_4bit=True with NF4 (requires bitsandbytes)
-    """
+    """Simple HF pipeline wrapper (no quantization)."""
 
-    def __init__(self, model_id=None, quant="none", device_map="auto"):
+    def __init__(self, model_id=None, device_map="auto"):
         self.model_id = model_id or DEFAULT_MODEL_ID
-        self.quant = (quant or "none").lower()
         self.device_map = device_map
 
-        try:
-            from transformers import (
-                pipeline,
-                AutoModelForCausalLM,
-                AutoTokenizer,
-                BitsAndBytesConfig,
-            )
-        except Exception as e:
-            raise RuntimeError(
-                "Please install 'transformers' (and 'bitsandbytes' for 8/4-bit)."
-            ) from e
-
-        # Build pipeline according to quantization mode
-        if self.quant == "none":
-            self.pipe = pipeline(
-                "text-generation",
-                model=self.model_id,
-                device_map=self.device_map,
-            )
-            self.tokenizer = self.pipe.tokenizer
-
-        elif self.quant in ("8bit", "4bit"):
-            # Explicit tokenizer + model load
-            tok = AutoTokenizer.from_pretrained(self.model_id, use_fast=True)
-            load_kwargs = {"device_map": self.device_map}
-
-            if self.quant == "8bit":
-                load_kwargs["load_in_8bit"] = True
-            else:
-                # 4-bit with NF4
-                try:
-                    qconf = BitsAndBytesConfig(
-                        load_in_4bit=True,
-                        bnb_4bit_quant_type="nf4",
-                        bnb_4bit_compute_dtype=None,  # let HF choose
-                    )
-                except Exception as e:
-                    raise RuntimeError(
-                        "bitsandbytes not available or misconfigured for 4-bit."
-                    ) from e
-                load_kwargs["load_in_4bit"] = True
-                load_kwargs["quantization_config"] = qconf
-
-            model = AutoModelForCausalLM.from_pretrained(self.model_id, **load_kwargs)
-
-            # Build the pipeline using the loaded model/tokenizer
-            self.pipe = pipeline(
-                "text-generation",
-                model=model,
-                tokenizer=tok,
-                device_map=self.device_map,
-            )
-            self.tokenizer = tok
-
-        else:
-            raise ValueError("Unknown quant option. Use 'none', '8bit', or '4bit'.")
+        self.pipe = pipeline(
+            "text-generation",
+            model=self.model_id,
+            device_map=self.device_map,
+        )
+        self.tokenizer = self.pipe.tokenizer
+        self._eos_ids = _collect_eos_ids(self.tokenizer)
+        # Use eos as pad to silence warnings/ensure batching works
+        self._pad_id = getattr(self.tokenizer, "eos_token_id", None)
 
     def translate_batch(self, items, **gen_kwargs):
         """
         items: list of dicts with keys: 'src', 'src_lang', 'tgt_lang'
-        returns: list of translated strings
+        returns: list of translated strings (one per input)
         """
-        # Safe defaults; deterministic unless you set do_sample=True explicitly
+        # Deterministic, one hypothesis per input
         params = {
-            "max_new_tokens": 256,
+            "max_new_tokens": 128,
             "do_sample": False,
+            "num_return_sequences": 1,
             "return_full_text": False,
+            "temperature": 0.0,  # redundant with do_sample=False, but explicit
         }
+        # Stop at assistant turn end
+        if self._eos_ids:
+            params["eos_token_id"] = self._eos_ids if len(self._eos_ids) > 1 else self._eos_ids[0]
+        if self._pad_id is not None:
+            params["pad_token_id"] = self._pad_id
+
         params.update(gen_kwargs or {})
 
         # Build prompts
@@ -127,37 +94,38 @@ class HFPipelineModel:
             prompts.append(_build_prompt(self.tokenizer, src_text, src_lang, tgt_lang))
 
         # Generate
-        outputs = self.pipe(prompts, **params)  # list of lists of dicts
+        outputs = self.pipe(prompts, **params)  # list[list[dict]]
 
-        # Post-process generations
+        # Post-process → exactly one line per input
         preds = []
         for prompt, out, it in zip(prompts, outputs, items):
-            # Robustly get text
             text = ""
             if out and isinstance(out, list) and isinstance(out[0], dict):
                 text = out[0].get("generated_text", "") or ""
 
-            # If backend ignored return_full_text=False, remove prompt prefix
-            if text.startswith(prompt):
-                cont = text[len(prompt):]
-            else:
-                cont = text
+            cont = text[len(prompt):] if text.startswith(prompt) else text
 
-            # Remove a single echoed "TargetLang:" label if present
-            target_label = _lang_name(it.get("tgt_lang", ""))
-            label_str = f"{target_label}:"
-            if label_str in cont:
-                cont = cont.split(label_str, 1)[-1]
+            # Strip a single echoed "TargetLang:" if present
+            tgt_label = f"{_lang_name(it.get('tgt_lang', ''))}:"
+            if tgt_label in cont:
+                cont = cont.split(tgt_label, 1)[-1]
 
-            # Trim common end tokens/artifacts
-            cont = re.split(r"(?:</s>|<\|endoftext\|>|Assistant:)", cont)[0]
+            # Hard stops: end-of-message markers or fake new turns
+            cont = re.split(
+                r"(?:<\|im_end\|>|</s>|<\|endoftext\|>|\n<\|im_start\|>user|\n\s*User:|\n\s*Assistant:)",
+                cont,
+                maxsplit=1,
+            )[0]
+            # Also cut if the source-language label reappears
+            src_label = f"{_lang_name(it.get('src_lang', ''))}:"
+            cont = cont.split(src_label, 1)[0]
 
-            # Basic stripping of quotes/whitespace
-            cont = cont.strip().strip('"').strip("“”").strip()
-            preds.append(cont)
+            # Keep only the first non-empty line
+            first_line = next((ln for ln in cont.strip().splitlines() if ln.strip()), "")
+            pred = first_line.strip().strip('"').strip("“”").strip()
+            preds.append(pred)
 
         return preds
 
-
-def build_model(model_id=None, quant="none", device_map="auto"):
-    return HFPipelineModel(model_id=model_id, quant=quant, device_map=device_map)
+def build_model(model_id=None, device_map="auto"):
+    return HFPipelineModel(model_id=model_id, device_map=device_map)

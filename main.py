@@ -6,7 +6,7 @@ import os
 from data import load_jsonl_pairs
 from model import build_model
 from binning import parse_bins, assign_bin, coerce_esa
-from eval import chrf_segment_scores, sentence_bleu_scores, bleu_corpus, comet22_scores
+from eval import chrf_segment_scores, bleu_corpus, comet22_scores
 
 def ensure_dir(path):
     if not os.path.exists(path):
@@ -37,13 +37,11 @@ def dump_csv(path, rows):
             w.writerow(out)
 
 def valid_pred_ref(r):
-    # a row is valid for per-segment metrics if it has a prediction and a non-empty reference
     if not isinstance(r.get("pred"), str):
         return False
     if not isinstance(r.get("ref"), str):
         return False
     return r["ref"].strip() != ""
-
 
 def mean_of(values):
     if not values:
@@ -51,8 +49,8 @@ def mean_of(values):
     return sum(values) / float(len(values))
 
 def group_mean(rows, metric_key, key_fn):
-    groups = {}   # group_key -> list of metric values
-    counts = {}   # group_key -> number of rows in that group (regardless of metric presence)
+    groups = {}
+    counts = {}
 
     for r in rows:
         g = key_fn(r)
@@ -63,9 +61,7 @@ def group_mean(rows, metric_key, key_fn):
         if isinstance(metrics, dict):
             v = metrics.get(metric_key, None)
         if isinstance(v, (int, float)):
-            if g not in groups:
-                groups[g] = []
-            groups[g].append(float(v))
+            groups.setdefault(g, []).append(float(v))
 
     out = {}
     for g, c in counts.items():
@@ -74,9 +70,9 @@ def group_mean(rows, metric_key, key_fn):
     return out
 
 def group_corpus_bleu(rows, key_fn):
-    preds = {}   # group_key -> list of strings
-    refs = {}    # group_key -> list of strings
-    counts = {}  # group_key -> number of rows in that group
+    preds = {}
+    refs = {}
+    counts = {}
 
     for r in rows:
         g = key_fn(r)
@@ -96,17 +92,15 @@ def group_corpus_bleu(rows, key_fn):
         out[g] = {"count": counts[g], "bleu": bleu_val}
     return out
 
-
 def main():
     ap = argparse.ArgumentParser(description="Translate, evaluate, and ESA-bin results (simplified).")
     ap.add_argument("--data", required=True, help="Path to JSONL with fields: src_lang, tgt_lang, src, tgt (+ meta.esa_score).")
     ap.add_argument("--outdir", required=True, help="Directory to write outputs.")
     ap.add_argument("--model_id", default="Unbabel/TowerInstruct-Mistral-7B-v0.2")
-    ap.add_argument("--quant", default="none", choices=["none", "8bit", "4bit"], help="bitsandbytes quantization mode.")
     ap.add_argument("--device_map", default="auto")
     ap.add_argument("--max_new_tokens", type=int, default=256)
     ap.add_argument("--bins", default="0-30,30-60,60-100", help='ESA bins like "0-30,30-60,60-100" with (lo,hi] semantics.')
-    ap.add_argument("--eval_metrics", default="chrf", help="Comma-separated subset of {chrf,sbleu,bleu,comet}.")
+    ap.add_argument("--eval_metrics", default="chrf", help="Comma-separated subset of {chrf,bleu,comet}.")
     ap.add_argument("--comet_gpus", type=int, default=1)
     ap.add_argument("--comet_batch", type=int, default=8)
     args = ap.parse_args()
@@ -114,13 +108,13 @@ def main():
     ensure_dir(args.outdir)
 
     # 1) Load data
-    items = load_jsonl_pairs(args.data)  # list of dicts
+    items = load_jsonl_pairs(args.data)
 
     # 2) Build model & translate
-    model = build_model(model_id=args.model_id, quant=args.quant, device_map=args.device_map)
+    model = build_model(model_id=args.model_id, device_map=args.device_map)
     preds = model.translate_batch(items, max_new_tokens=args.max_new_tokens)
 
-    # 3) Attach ESA score/bin and prepare flat rows
+    # 3) Attach ESA score/bin
     bins = parse_bins(args.bins)
     rows = []
     for idx, (it, pred) in enumerate(zip(items, preds)):
@@ -146,19 +140,15 @@ def main():
             "metrics": {}
         })
 
-    # 4) Metrics (optional)
+    # 4) Metrics
     metrics = []
     for m in args.eval_metrics.split(","):
         m = m.strip().lower()
         if m:
             metrics.append(m)
 
-    # chrF (per segment)
     if "chrf" in metrics:
-        idxs = []
-        for i, r in enumerate(rows):
-            if valid_pred_ref(r):
-                idxs.append(i)
+        idxs = [i for i, r in enumerate(rows) if valid_pred_ref(r)]
         if idxs:
             preds_v = [rows[i]["pred"] for i in idxs]
             refs_v  = [rows[i]["ref"]  for i in idxs]
@@ -166,26 +156,9 @@ def main():
             for k, score in zip(idxs, seg_chrf):
                 rows[k]["metrics"]["chrf"] = score
 
-    # sBLEU (per segment)
-    if "sbleu" in metrics:
-        idxs = []
-        for i, r in enumerate(rows):
-            if valid_pred_ref(r):
-                idxs.append(i)
-        if idxs:
-            preds_v = [rows[i]["pred"] for i in idxs]
-            refs_v  = [rows[i]["ref"]  for i in idxs]
-            seg_sbleu = sentence_bleu_scores(preds_v, refs_v)
-            for k, score in zip(idxs, seg_sbleu):
-                rows[k]["metrics"]["sbleu"] = score
-
-    # COMET-22 (per segment + overall)
     comet_overall = None
     if "comet" in metrics:
-        idxs = []
-        for i, r in enumerate(rows):
-            if valid_pred_ref(r) and isinstance(r.get("src"), str):
-                idxs.append(i)
+        idxs = [i for i, r in enumerate(rows) if valid_pred_ref(r) and isinstance(r.get("src"), str)]
         if idxs:
             srcs_v  = [rows[i]["src"]  for i in idxs]
             preds_v = [rows[i]["pred"] for i in idxs]
@@ -197,13 +170,9 @@ def main():
             for k, score in zip(idxs, seg_scores):
                 rows[k]["metrics"]["comet_seg"] = score
 
-    # BLEU (corpus-level only)
     overall_bleu = None
     if "bleu" in metrics:
-        idxs = []
-        for i, r in enumerate(rows):
-            if valid_pred_ref(r):
-                idxs.append(i)
+        idxs = [i for i, r in enumerate(rows) if valid_pred_ref(r)]
         if idxs:
             preds_v = [rows[i]["pred"] for i in idxs]
             refs_v  = [rows[i]["ref"]  for i in idxs]
@@ -215,7 +184,6 @@ def main():
 
     dump_jsonl(pred_path, rows)
 
-    # Flatten metrics for the CSV (simple, explicit loop)
     rows_for_csv = []
     for r in rows:
         m = r.get("metrics", {})
@@ -227,23 +195,16 @@ def main():
             "esa_score": r.get("esa_score"),
             "esa_bin": r.get("esa_bin"),
             "chrf": m.get("chrf"),
-            "sbleu": m.get("sbleu"),
             "comet_seg": m.get("comet_seg"),
         })
     dump_csv(csv_path, rows_for_csv)
 
-    # 6) Build summaries (overall / by ESA bin / by langpair / by both)
-    def key_by_bin(r):
-        return r.get("esa_bin", "UNBINNED")
-
-    def key_by_lp(r):
-        return r.get("langpair", "unknown")
-
-    def key_by_lp_bin(r):
-        return key_by_lp(r) + " | " + key_by_bin(r)
+    # 6) Summaries
+    def key_by_bin(r): return r.get("esa_bin", "UNBINNED")
+    def key_by_lp(r): return r.get("langpair", "unknown")
+    def key_by_lp_bin(r): return key_by_lp(r) + " | " + key_by_bin(r)
 
     metrics_summary = {}
-
     if "chrf" in metrics:
         metrics_summary["chrf"] = {
             "overall": {
@@ -253,17 +214,6 @@ def main():
             "by_bin":          group_mean(rows, "chrf", key_by_bin),
             "by_langpair":     group_mean(rows, "chrf", key_by_lp),
             "by_langpair_bin": group_mean(rows, "chrf", key_by_lp_bin),
-        }
-
-    if "sbleu" in metrics:
-        metrics_summary["sbleu"] = {
-            "overall": {
-                "count": len(rows),
-                "mean": mean_of([r["metrics"]["sbleu"] for r in rows if isinstance(r.get("metrics", {}).get("sbleu"), (int, float))])
-            },
-            "by_bin":          group_mean(rows, "sbleu", key_by_bin),
-            "by_langpair":     group_mean(rows, "sbleu", key_by_lp),
-            "by_langpair_bin": group_mean(rows, "sbleu", key_by_lp_bin),
         }
 
     if "comet" in metrics:
@@ -293,7 +243,6 @@ def main():
             "config": {
                 "data": args.data,
                 "model_id": args.model_id,
-                "quant": args.quant,
                 "device_map": args.device_map,
                 "max_new_tokens": args.max_new_tokens,
                 "bins": args.bins,
@@ -307,26 +256,19 @@ def main():
     print("Saved:", pred_path)
     print("Saved:", csv_path)
     print("Saved:", summary_path)
-    print("\nESA bins (avg chrF / sBLEU / COMET / BLEU if requested):")
+    print("\nESA bins:")
 
-    bins_seen = {}
-    for r in rows:
-        bins_seen[r.get("esa_bin")] = True
-    bins_sorted = sorted([b for b in bins_seen.keys()])
-
-    for b in bins_sorted:
+    bins_seen = {r.get("esa_bin") for r in rows}
+    for b in sorted(bins_seen):
         n_in_bin = sum(1 for r in rows if r.get("esa_bin") == b)
         parts = [("{:>12}".format(str(b))) + "  n=" + str(n_in_bin)]
         if "chrf" in metrics_summary:
             parts.append("chrf=" + str(metrics_summary["chrf"]["by_bin"].get(b, {}).get("mean")))
-        if "sbleu" in metrics_summary:
-            parts.append("sbleu=" + str(metrics_summary["sbleu"]["by_bin"].get(b, {}).get("mean")))
         if "comet" in metrics_summary:
             parts.append("comet=" + str(metrics_summary["comet"]["by_bin"].get(b, {}).get("mean")))
         if "bleu" in metrics_summary:
             parts.append("bleu=" + str(metrics_summary["bleu"]["by_bin"].get(b, {}).get("bleu")))
         print("  " + "  ".join(parts))
-
 
 if __name__ == "__main__":
     main()

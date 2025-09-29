@@ -14,24 +14,12 @@ module load Miniconda3/24.7.1-0
 
 source activate nlp
 
+cd $HOME/dl4nlp/DL4NLP/
+
+# srun python TowerMistral/eval_mt.py --data data/subset.jsonl
+
 # Default
-# srun python main.py \
-#     --data data/subset.jsonl \
-#     --outdir results/ \
-#     --eval_metrics chrf,bleu
-
-# 8-bit quantization
-python main.py \
+srun python main.py \
     --data data/subset.jsonl \
-    --outdir runs/exp1_bnb8 \
-    --model_id Unbabel/TowerInstruct-Mistral-7B-v0.2 \
-    --quant 8bit \
-    --eval_metrics chrf,bleu
-
-# 4-bit quantization
-    # python main.py \
-    # --data data/subset.jsonl \
-    # --outdir runs/exp1_bnb4 \
-    # --model_id Unbabel/TowerInstruct-Mistral-7B-v0.2 \
-    # --quant 4bit \
-    # --eval_metrics chrf,bleu
+    --outdir results/ \
+    --eval_metrics chrf
