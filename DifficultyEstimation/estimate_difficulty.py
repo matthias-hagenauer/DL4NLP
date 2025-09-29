@@ -1,6 +1,3 @@
-import sentinel_metric
-from sentinel_metric import download_model, load_from_checkpoint
- 
 # Load model directly
 # Use a pipeline as a high-level helper
 from transformers import pipeline
