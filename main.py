@@ -204,6 +204,7 @@ def main():
             overall_bleu = float(bleu_corpus(preds_v, refs_v).get("bleu", 0.0))
 
     # 5) Save per-row data
+    # TODO: Add specific model path to output
     pred_path = os.path.join(args.outdir, "predictions.jsonl")
     csv_path  = os.path.join(args.outdir, "rows.csv")
 

@@ -20,6 +20,6 @@ cd $HOME/dl4nlp/DL4NLP/
 
 # Default
 srun python main.py \
-    --data data/subset.jsonl \
+    --data data/wmt24_esa.jsonl \
     --outdir results/ \
     --eval_metrics chrf

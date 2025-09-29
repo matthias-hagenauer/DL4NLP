@@ -92,8 +92,8 @@ pip install "unbabel-comet>=2.2.6"
 
 You can run the models directly with the commands below, or submit the provided `run.job` script via Slurm.
 
-> **Note:** The examples here use the small demo file `data/pairs.jsonl`.  
-> For the full dataset, replace `--data data/pairs.jsonl` with:  
+> **Note:** The examples here use the small demo file `data/subset.jsonl`.  
+> For the full dataset, replace `--data data/subset.jsonl` with:  
 > `--data data/wmt24_esa.jsonl`
 
 ```bash
