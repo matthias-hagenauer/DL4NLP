@@ -1,7 +1,8 @@
 from sentinel_metric import download_model, load_from_checkpoint
-
-model_path = download_model("Prosho/sentinel-src-24")
-model = load_from_checkpoint(model_path)
+import sentinel_metric 
+# Load model directly
+from transformers import AutoModel
+model = AutoModel.from_pretrained("Prosho/sentinel-src-24", torch_dtype="auto")
 
 data = [
     {"src": "Please sign the form."},
