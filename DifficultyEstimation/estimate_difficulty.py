@@ -1,12 +1,11 @@
-# Load model directly
-# Use a pipeline as a high-level helper
-from transformers import pipeline
+from sentinel_metric import download_model, load_from_checkpoint
 
-pipe = pipeline("translation", model="Prosho/sentinel-src-24")
+model_path = download_model("Prosho/sentinel-src-24")
+model = load_from_checkpoint(model_path)
 
 data = [
     {"src": "Please sign the form."},
     {"src": "He spilled the beans, then backpedaled—talk about mixed signals!"}
 ]
 
-output = pipe(data)
+output = model.predict(data, batch_size=8, gpus=1)
