@@ -54,8 +54,9 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 pip install -r requirements.txt
 
-# Extra runtime helpers that models/metrics often need:
+# Extra runtime helpers that models need:
 pip install sentencepiece protobuf safetensors
+# !pip install llama-cpp-python
 ```
 
 ### Optional: COMET metric (for --eval_metrics comet)
@@ -99,3 +100,15 @@ python main.py \
 ```
 
 
+### Download 2-bit Tower Mistral model (GGUF format)
+
+```bash
+# Create a models directory in your home folder if it doesn't exist,
+# then change into that directory so the download saves there
+mkdir -p ~/models && cd ~/models && \
+
+# Download the 2-bit (Q2_K) GGUF model file from Hugging Face and
+# save it locally with a clear filename
+wget -O TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf \
+"https://huggingface.co/tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF/resolve/main/TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf?download=true"
+```
