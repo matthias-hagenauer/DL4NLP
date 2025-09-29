@@ -1,0 +1,57 @@
+{
+  "config": {
+    "data": "data/subset.jsonl",
+    "model_id": "TM_4bit",
+    "device_map": "auto",
+    "max_new_tokens": 256,
+    "bins": "0-30,30-60,60-100",
+    "eval_metrics": [
+      "chrf"
+    ]
+  },
+  "counts": {
+    "rows": 60
+  },
+  "metrics": {
+    "chrf": {
+      "overall": {
+        "count": 60,
+        "mean": 57.571764978580255
+      },
+      "by_bin": {
+        "(30.0-60.0]": {
+          "count": 15,
+          "mean": 56.27734528878251
+        },
+        "(60.0-100.0]": {
+          "count": 42,
+          "mean": 57.25325469193676
+        },
+        "(0.0-30.0]": {
+          "count": 3,
+          "mean": 68.50300744057789
+        }
+      },
+      "by_langpair": {
+        "en-ru": {
+          "count": 60,
+          "mean": 57.571764978580255
+        }
+      },
+      "by_langpair_bin": {
+        "en-ru | (30.0-60.0]": {
+          "count": 15,
+          "mean": 56.27734528878251
+        },
+        "en-ru | (60.0-100.0]": {
+          "count": 42,
+          "mean": 57.25325469193676
+        },
+        "en-ru | (0.0-30.0]": {
+          "count": 3,
+          "mean": 68.50300744057789
+        }
+      }
+    }
+  }
+}
