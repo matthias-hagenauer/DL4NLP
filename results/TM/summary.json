@@ -1,10 +1,10 @@
 {
   "config": {
     "data": "data/subset.jsonl",
-    "model_id": "Unbabel/TowerInstruct-Mistral-7B-v0.2",
+    "model_id": "TM",
     "device_map": "auto",
     "max_new_tokens": 256,
-    "bins": "0-30,30-60,60-100",
+    "bins": "quantile_balanced",
     "eval_metrics": [
       "chrf"
     ]
@@ -16,40 +16,40 @@
     "chrf": {
       "overall": {
         "count": 60,
-        "mean": 64.2734021238341
+        "mean": 64.10098421007591
       },
       "by_bin": {
-        "(30.0-60.0]": {
-          "count": 15,
-          "mean": 58.727263271512605
+        "(0-64]": {
+          "count": 20,
+          "mean": 61.61380822222109
         },
-        "(60.0-100.0]": {
-          "count": 42,
-          "mean": 65.61503002776186
+        "(64-91]": {
+          "count": 20,
+          "mean": 62.33388758153829
         },
-        "(0.0-30.0]": {
-          "count": 3,
-          "mean": 73.2213057304528
+        "(91-100]": {
+          "count": 20,
+          "mean": 68.35525682646833
         }
       },
       "by_langpair": {
         "en-ru": {
           "count": 60,
-          "mean": 64.2734021238341
+          "mean": 64.10098421007591
         }
       },
       "by_langpair_bin": {
-        "en-ru | (30.0-60.0]": {
-          "count": 15,
-          "mean": 58.727263271512605
+        "en-ru | (0-64]": {
+          "count": 20,
+          "mean": 61.61380822222109
         },
-        "en-ru | (60.0-100.0]": {
-          "count": 42,
-          "mean": 65.61503002776186
+        "en-ru | (64-91]": {
+          "count": 20,
+          "mean": 62.33388758153829
         },
-        "en-ru | (0.0-30.0]": {
-          "count": 3,
-          "mean": 73.2213057304528
+        "en-ru | (91-100]": {
+          "count": 20,
+          "mean": 68.35525682646833
         }
       }
     }
