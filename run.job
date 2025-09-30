@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --partition=gpu_mig
+#SBATCH --partition=gpu_a100
 #SBATCH --gpus=1
 #SBATCH --job-name=Run
 #SBATCH --ntasks=1
@@ -20,6 +20,7 @@ cd $HOME/dl4nlp/DL4NLP/
 
 # Default
 srun python main.py \
-    --data data/wmt24_esa.jsonl \
+    --data data/subset.jsonl \
     --outdir results/ \
-    --eval_metrics chrf
+    --eval_metrics chrf \
+    --bins quantile_balanced

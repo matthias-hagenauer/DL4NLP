@@ -148,20 +148,36 @@ def main():
     is_interval = args.bins.startswith("interval")
     is_balanced = args.bins.endswith("balanced")
 
-    scores = [int(it.get("esa_score")) for it in items]
-
-    if is_interval: # interval
-        bin_tuples = parse_bins("0-33,33-66,66-100")
-    else: # quantile
-        bin_tuples = quantile_bin_tuples(scores, q=3)
-    
-    # Add "difficulty" key to each item's dictionary
+    # Collect ESA scores from item meta (coerce to float, skip bad values)
+    scores = []
     for it in items:
-        bin_labels = ["(%s-%s]" % (lo, hi) for lo, hi in bin_tuples]
+        meta = it.get("meta", {}) if isinstance(it.get("meta", {}), dict) else {}
+        s = meta.get("esa_score")
+        try:
+            scores.append(float(s))
+        except Exception:
+            pass
+
+    # Choose bin scheme
+    if is_interval:
+        # [0-33], (33-66], (66-100] as in the help text
+        bin_tuples = parse_bins("0-33,33-66,66-100")
+    else:
+        # Quantile bins from data (q=3 ~ terciles)
+        bin_tuples = quantile_bin_tuples(scores, q=3)
+
+    # Assign difficulty label per item
+    for it in items:
+        meta = it.get("meta", {}) if isinstance(it.get("meta", {}), dict) else {}
+        esa = coerce_esa(meta.get("esa_score"))
         it["difficulty"] = assign_bin(esa, bin_tuples)
 
+    # Optional balancing (in-place; marks overflow items as UNBINNED)
     if is_balanced:
-        bins = balance_bins(bin_tuples, scores, items)
+        balance_bins(bin_tuples, items, seed=42)
+
+    print("Bins:", bin_tuples)
+    print("Sample assignments:", [assign_bin(s, bin_tuples) for s in [0, 33, 66, 100]])
 
     #########################
 
@@ -188,7 +204,8 @@ def main():
             "esa_score": esa,
             "esa_bin": label,
             "meta": meta,
-            "metrics": {}
+            "metrics": {},
+            "binning": args.bins
         })
 
     # 4) Metrics
