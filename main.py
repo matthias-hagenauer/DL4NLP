@@ -8,6 +8,10 @@ from model import build_model
 from binning import parse_bins, assign_bin, coerce_esa
 from eval import chrf_segment_scores, bleu_corpus, comet22_scores
 
+# Extra import for new binning process
+from binning import quantile_bin_tuples, balance_bins
+import random
+
 def ensure_dir(path):
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
@@ -104,8 +108,8 @@ def main():
     ap.add_argument("--outdir", default=None, help="Output dir (default: results/<model_id>).")
     ap.add_argument("--device_map", default="auto")
     ap.add_argument("--max_new_tokens", type=int, default=256)
-    ap.add_argument("--bins", default="0-30,30-60,60-100",
-                    help='ESA bins like "0-30,30-60,60-100" with (lo,hi] semantics.')
+    ap.add_argument("--bins", choices=["interval", "interval_balanced", "quantile", "quantile_balanced"], default="interval",
+                    help='interval: [0-33],(33-66],(66-100]; quantile: 3 equal-size bins (approximately); balanced: equal-size bins forced by random pruning to min size.')
     ap.add_argument("--eval_metrics", default="chrf", help="Comma-separated subset of {chrf,bleu,comet}.")
     ap.add_argument("--comet_gpus", type=int, default=1)
     ap.add_argument("--comet_batch", type=int, default=8)
@@ -139,13 +143,35 @@ def main():
     )
     preds = model.translate_batch(items, max_new_tokens=args.max_new_tokens)
 
+    ##### Binning Logic #####
+
+    is_interval = args.bins.startswith("interval")
+    is_balanced = args.bins.endswith("balanced")
+
+    scores = [int(it.get("esa_score")) for it in items]
+
+    if is_interval: # interval
+        bin_tuples = parse_bins("0-33,33-66,66-100")
+    else: # quantile
+        bin_tuples = quantile_bin_tuples(scores, q=3)
+    
+    # Add "difficulty" key to each item's dictionary
+    for it in items:
+        bin_labels = ["(%s-%s]" % (lo, hi) for lo, hi in bin_tuples]
+        it["difficulty"] = assign_bin(esa, bin_tuples)
+
+    if is_balanced:
+        bins = balance_bins(bin_tuples, scores, items)
+
+    #########################
+
     # 3) Attach ESA score/bin
-    bins = parse_bins(args.bins)
+    # bins = parse_bins(args.bins) no longer needed, see Binning Logic
     rows = []
     for idx, (it, pred) in enumerate(zip(items, preds)):
         meta = it.get("meta", {}) if isinstance(it.get("meta", {}), dict) else {}
         esa = coerce_esa(meta.get("esa_score"))
-        label = assign_bin(esa, bins)
+        label = it.get("difficulty")   # TODO needs a 'not == UNBINNED' check for balanced!!!!
         uid = meta.get("line_id", idx)
         src_lang = it.get("src_lang")
         tgt_lang = it.get("tgt_lang")
