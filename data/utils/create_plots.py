@@ -1,7 +1,7 @@
 import json
 import matplotlib.pyplot as plt
 
-file_path = "data/wmt24_estimated.jsonl"  
+file_path = "data/wmt24_estimated_normalized.jsonl"  
 
 def load_data(path):
     with open(path, "r", encoding="utf-8") as f:
