@@ -121,6 +121,8 @@ You can run models like this below.
 > For the full dataset, replace `--data data/wmt24_filtered_100.jsonl` with:  
 > `--data data/wmt24_estimated.jsonl`
 
+Set eval metrics like `--eval_metrics chrf bleu comet`.
+
 ```bash
 # Baseline HuggingFace TowerMistral
 python main.py --model_id TM --data data/wmt24_filtered_100.jsonl
