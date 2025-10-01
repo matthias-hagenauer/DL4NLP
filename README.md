@@ -46,9 +46,22 @@ We generate several JSONL datasets:
 
 ### Example command
 You can create a subset yourself using the following command (specify `--n`):
+
 ```bash
 python data/utils/filter.py --mode balanced --n 100
 ```
+
+---
+
+## Metrics
+
+We use the [🤗 Evaluate](https://huggingface.co/docs/evaluate/index) library for automatic evaluation:
+
+- **chrF** — character n-gram F-score (`evaluate.load("chrf")`)  
+- **BLEU (corpus-level)** — classic word-based metric (`evaluate.load("bleu")`)  
+- **COMET-22** — learned quality estimation model ([Unbabel/wmt22-comet-da](https://huggingface.co/Unbabel/wmt22-comet-da))  
+
+These metrics together provide complementary insights: BLEU/chrF capture surface-level overlap, while COMET better reflects human judgments.
 
 ---
 

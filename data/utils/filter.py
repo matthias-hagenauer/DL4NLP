@@ -120,8 +120,8 @@ def main():
     ap = argparse.ArgumentParser(
         description="Filter EN→{DE,ES,ZH,NL} from NEW JSONL schema, normalize lp, and (optionally) balance by target language."
     )
-    ap.add_argument("--input", required=False, default="data/wmt24_estimated.jsonl",
-                    help="Path to input .jsonl (default: data/wmt24_estimated.jsonl)")
+    ap.add_argument("--input", required=False, default="data/wmt24_estimated_normalized.jsonl",
+                    help="Path to input .jsonl (default: data/wmt24_estimated_normalized.jsonl)")
     ap.add_argument("--output", required=False, default="data/wmt24_filtered_{n}.jsonl",
                     help="Path to output .jsonl (default: data/wmt24_filtered_{n}.jsonl, with n substituted)")
     ap.add_argument("--mode", choices=["all", "balanced"], default="all",

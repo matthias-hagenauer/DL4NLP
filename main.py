@@ -207,7 +207,7 @@ def main():
         })
 
     # 5) Metrics
-    metrics = [m.strip().lower() for m in args.eval_metrics.split(",") if m.strip()]
+    metrics = [m.lower() for m in args.eval_metrics]
     if "chrf" in metrics:
         idxs = [i for i, r in enumerate(rows) if valid_pred_ref(r)]
         if idxs:
