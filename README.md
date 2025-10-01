@@ -46,7 +46,7 @@ We generate several JSONL datasets:
 ### Example command
 You can create a subset yourself using the following command (specify `--n`):
 ```bash
-python data/filter.py --mode balanced --n 100
+python data/utils/filter.py --mode balanced --n 100
 ```
 
 ---
