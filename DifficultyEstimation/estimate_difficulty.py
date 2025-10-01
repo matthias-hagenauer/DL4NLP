@@ -9,3 +9,4 @@ data = [
 ]
 
 output = model.predict(data, batch_size=8, gpus=1)
+print(output)
