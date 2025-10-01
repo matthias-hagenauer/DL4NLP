@@ -17,7 +17,7 @@ source activate nlp
 cd $HOME/dl4nlp/DL4NLP/
 
 # Baseline HuggingFace TowerMistral
-# srun python main.py --model_id TM --data data/balanced_100.jsonl --bins quantile_balanced
+srun python main.py --model_id TM --data data/wmt24_filtered_100.jsonl --bins quantile_balanced
 
 # # 2-bit quantized GGUF (local if available, else HF)
 # srun python main.py --model_id TM_2bit --data data/esa_scores_mistral.jsonl --n_gpu_layers 40 --bins quantile_balanced

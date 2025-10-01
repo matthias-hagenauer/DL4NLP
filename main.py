@@ -5,130 +5,162 @@ import os
 
 from data import load_jsonl_pairs
 from model import build_model
-from binning import parse_bins, assign_bin, coerce_esa
 from eval import chrf_segment_scores, bleu_corpus, comet22_scores
 
-# Extra import for new binning process
-from binning import quantile_bin_tuples, balance_bins
-import random
+from binning import parse_bins, assign_bin, coerce_esa, quantile_bin_tuples, balance_bins
 
-def ensure_dir(path):
+
+# Utility functions
+def ensure_dir(path: str):
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
+
 
 def dump_jsonl(path, rows):
     with open(path, "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
+
 def dump_csv(path, rows):
     if not rows:
         return
 
-    keys = set()
-    for r in rows:
-        for k in r.keys():
-            keys.add(k)
-    keys = sorted(keys)
-
+    keys = sorted({k for r in rows for k in r.keys()})
     with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=keys)
         w.writeheader()
         for r in rows:
-            out = {}
-            for k in keys:
-                out[k] = r.get(k, "")
-            w.writerow(out)
+            w.writerow({k: r.get(k, "") for k in keys})
 
+# Pred utilituy functions
 def valid_pred_ref(r):
-    if not isinstance(r.get("pred"), str):
-        return False
-    if not isinstance(r.get("ref"), str):
-        return False
-    return r["ref"].strip() != ""
+    return isinstance(r.get("pred"), str) and isinstance(r.get("ref"), str) and r["ref"].strip() != ""
+
 
 def mean_of(values):
     if not values:
         return None
     return sum(values) / float(len(values))
 
-def group_mean(rows, metric_key, key_fn):
-    groups = {}
-    counts = {}
 
+def group_mean(rows, metric_key, key_fn):
+    groups, counts = {}, {}
     for r in rows:
         g = key_fn(r)
         counts[g] = counts.get(g, 0) + 1
-
-        v = None
-        metrics = r.get("metrics")
-        if isinstance(metrics, dict):
-            v = metrics.get(metric_key, None)
+        v = r.get("metrics", {}).get(metric_key)
         if isinstance(v, (int, float)):
             groups.setdefault(g, []).append(float(v))
 
-    out = {}
-    for g, c in counts.items():
-        vals = groups.get(g, [])
-        out[g] = {"count": c, "mean": mean_of(vals)}
-    return out
+    return {g: {"count": counts[g], "mean": mean_of(groups.get(g, []))} for g in counts}
+
 
 def group_corpus_bleu(rows, key_fn):
-    preds = {}
-    refs = {}
-    counts = {}
-
+    preds, refs, counts = {}, {}, {}
     for r in rows:
         g = key_fn(r)
         counts[g] = counts.get(g, 0) + 1
-
         if valid_pred_ref(r):
             preds.setdefault(g, []).append(r["pred"])
             refs.setdefault(g, []).append(r["ref"])
-
     out = {}
-    for g in counts.keys():
-        pv = preds.get(g, [])
-        rv = refs.get(g, [])
-        bleu_val = None
-        if pv and rv and len(pv) == len(rv):
-            bleu_val = float(bleu_corpus(pv, rv).get("bleu", 0.0))
+    for g in counts:
+        pv, rv = preds.get(g, []), refs.get(g, [])
+        bleu_val = float(bleu_corpus(pv, rv).get("bleu", 0.0)) if pv and rv and len(pv) == len(rv) else None
         out[g] = {"count": counts[g], "bleu": bleu_val}
     return out
 
+
+# Binning utility functions
+def collect_difficulty_scores(items):
+    """
+    Extract numeric difficulty scores from items. Accepts top-level 'difficulty_score'
+    (preferred) and falls back to meta['difficulty_score'].
+    """
+    scores = []
+    for it in items:
+        s = it.get("difficulty_score")
+        if s is None:
+            meta = it.get("meta", {}) if isinstance(it.get("meta", {}), dict) else {}
+            s = meta.get("difficulty_score")
+        s = coerce_esa(s)  # generic float coercion
+        if s is not None:
+            scores.append(s)
+    return scores
+
+
+def choose_bins(items, bins_mode):
+    """
+    bins_mode in {"interval", "interval_balanced", "quantile", "quantile_balanced"}.
+    For "interval*" we expect users to pass a parse-able spec if they override; we keep
+    the legacy default of 3 bins with equal widths determined from the data if needed.
+    """
+    is_interval = bins_mode.startswith("interval")
+    scores = collect_difficulty_scores(items)
+
+    if is_interval:
+        # If the user wants interval bins but didn't pass a spec elsewhere,
+        # fall back to quantile as a sane default for arbitrary real-valued scores.
+        # (Keeping interface simple: we use terciles.)
+        return quantile_bin_tuples(scores, q=3)
+    else:
+        # Quantile terciles over observed scores (supports negatives, ties)
+        return quantile_bin_tuples(scores, q=3)
+
+
+def assign_difficulty_bins(items, bin_tuples, balanced: bool):
+    """
+    Mutates items:
+      - sets item['difficulty'] = label produced by assign_bin(score, bin_tuples)
+      - if balanced, calls balance_bins to mark overflow items as UNBINNED
+    """
+    # Initial assignment
+    for it in items:
+        s = it.get("difficulty_score")
+        if s is None:
+            meta = it.get("meta", {}) if isinstance(it.get("meta", {}), dict) else {}
+            s = meta.get("difficulty_score")
+        it["difficulty"] = assign_bin(coerce_esa(s), bin_tuples)
+
+    if balanced:
+        balance_bins(bin_tuples, items, seed=42)
+
+
+# Main function
 def main():
-    ap = argparse.ArgumentParser(description="Translate, evaluate, and ESA-bin results (simplified).")
-
-    ap.add_argument("--data", required=True, help="Path to JSONL with fields: src_lang, tgt_lang, src, tgt (+ meta.esa_score).")
-
-    # Single switch: TM, TM_2bit, TM_3bit, TM_4bit, TM_5bit, TM_6bit, TM_8bit, or any HF id
+    ap = argparse.ArgumentParser(description="Translate, evaluate, and bin by difficulty.")
+    ap.add_argument("--data", required=True, help="Path to NEW-schema JSONL (lp, source, target, ...).")
+    # Model
     ap.add_argument("--model_id", default="TM",
-                    help="Model id: TM (HF baseline), TM_2bit..TM_8bit (GGUF), or any HF model id.")
-
-    ap.add_argument("--outdir", default=None, help="Output dir (default: results/<model_id>).")
+                    help="TM (HF baseline), TM_2bit..TM_8bit (GGUF), or any HF model id.")
     ap.add_argument("--device_map", default="auto")
     ap.add_argument("--max_new_tokens", type=int, default=256)
-    ap.add_argument("--bins", choices=["interval", "interval_balanced", "quantile", "quantile_balanced"], default="interval",
-                    help='interval: [0-33],(33-66],(66-100]; quantile: 3 equal-size bins (approximately); balanced: equal-size bins forced by random pruning to min size.')
+    # Outputs
+    ap.add_argument("--outdir", default=None, help="Output dir (default: results/<model_id>).")
+    # Binning
+    ap.add_argument("--bins", choices=["interval", "interval_balanced", "quantile", "quantile_balanced"],
+                    default="interval",
+                    help="interval*: equal-sized groups via data-driven fallback; quantile*: terciles. *_balanced marks overflow items as UNBINNED.")
+    # COMET config
     ap.add_argument("--eval_metrics", default="chrf", help="Comma-separated subset of {chrf,bleu,comet}.")
     ap.add_argument("--comet_gpus", type=int, default=1)
     ap.add_argument("--comet_batch", type=int, default=8)
-
-    # GGUF optional overrides (only matter for TM_*bit)
-    ap.add_argument("--gguf_repo", default=None, help="Override HF repo for GGUF.")
-    ap.add_argument("--gguf_file", default=None, help="Override filename inside HF repo for GGUF.")
-    ap.add_argument("--gguf_path", default=None, help="Override local path to .gguf.")
-    ap.add_argument("--n_ctx", type=int, default=4096, help="llama.cpp context length")
-    ap.add_argument("--n_gpu_layers", type=int, default=0, help="llama.cpp GPU offload layers (0=CPU).")
+    # GGUF (only if using TM_*bit)
+    ap.add_argument("--gguf_repo", default=None)
+    ap.add_argument("--gguf_file", default=None)
+    ap.add_argument("--gguf_path", default=None)
+    ap.add_argument("--n_ctx", type=int, default=4096)
+    ap.add_argument("--n_gpu_layers", type=int, default=0)
 
     args = ap.parse_args()
 
-    # Default outdir if not provided
+    # Output dir
     if not args.outdir:
         args.outdir = f"results/{args.model_id}"
     ensure_dir(args.outdir)
 
-    # 1) Load data
+    # 1) Load data (already normalized & filtered by data.py)
     items = load_jsonl_pairs(args.data)
 
     # 2) Build model & translate
@@ -143,75 +175,38 @@ def main():
     )
     preds = model.translate_batch(items, max_new_tokens=args.max_new_tokens)
 
-    ##### Binning Logic #####
-
-    is_interval = args.bins.startswith("interval")
+    # 3) Binning (clean)
     is_balanced = args.bins.endswith("balanced")
+    bin_tuples = choose_bins(items, args.bins)
+    assign_difficulty_bins(items, bin_tuples, balanced=is_balanced)
 
-    # Collect ESA scores from item meta (coerce to float, skip bad values)
-    scores = []
-    for it in items:
-        meta = it.get("meta", {}) if isinstance(it.get("meta", {}), dict) else {}
-        s = meta.get("esa_score")
-        try:
-            scores.append(float(s))
-        except Exception:
-            pass
-
-    # Choose bin scheme
-    if is_interval:
-        # [0-33], (33-66], (66-100] as in the help text
-        bin_tuples = parse_bins("0-33,33-66,66-100")
-    else:
-        # Quantile bins from data (q=3 ~ terciles)
-        bin_tuples = quantile_bin_tuples(scores, q=3)
-
-    # Assign difficulty label per item
-    for it in items:
-        meta = it.get("meta", {}) if isinstance(it.get("meta", {}), dict) else {}
-        esa = coerce_esa(meta.get("esa_score"))
-        it["difficulty"] = assign_bin(esa, bin_tuples)
-
-    # Optional balancing (in-place; marks overflow items as UNBINNED)
-    if is_balanced:
-        balance_bins(bin_tuples, items, seed=42)
-
-    #########################
-
-    # 3) Attach ESA score/bin
-    # bins = parse_bins(args.bins) no longer needed, see Binning Logic
+    # 4) Build per-row records
     rows = []
     for idx, (it, pred) in enumerate(zip(items, preds)):
         meta = it.get("meta", {}) if isinstance(it.get("meta", {}), dict) else {}
-        esa = coerce_esa(meta.get("esa_score"))
-        label = it.get("difficulty")   # TODO needs a 'not == UNBINNED' check for balanced!!!!
-        uid = meta.get("line_id", idx)
-        src_lang = it.get("src_lang")
-        tgt_lang = it.get("tgt_lang")
-        langpair = f"{src_lang}-{tgt_lang}"
+        # Stable ID: document_id:segment_id:lp  (falls back to idx if missing)
+        doc_id = str(meta.get("document_id", ""))
+        seg_id = str(meta.get("segment_id", ""))
+        lp     = f"{it.get('src_lang','?')}-{it.get('tgt_lang','?')}"
+        uid = f"{doc_id}:{seg_id}:{lp}" if (doc_id and seg_id) else str(idx)
 
         rows.append({
             "id": uid,
-            "langpair": langpair,
-            "src_lang": src_lang,
-            "tgt_lang": tgt_lang,
+            "langpair": lp,
+            "src_lang": it.get("src_lang"),
+            "tgt_lang": it.get("tgt_lang"),
             "src": it.get("src"),
             "ref": it.get("tgt"),
             "pred": pred,
-            "esa_score": esa,
-            "esa_bin": label,
+            "difficulty_score": it.get("difficulty_score", meta.get("difficulty_score")),
+            "difficulty_bin": it.get("difficulty"),
             "meta": meta,
             "metrics": {},
             "binning": args.bins
         })
 
-    # 4) Metrics
-    metrics = []
-    for m in args.eval_metrics.split(","):
-        m = m.strip().lower()
-        if m:
-            metrics.append(m)
-
+    # 5) Metrics
+    metrics = [m.strip().lower() for m in args.eval_metrics.split(",") if m.strip()]
     if "chrf" in metrics:
         idxs = [i for i, r in enumerate(rows) if valid_pred_ref(r)]
         if idxs:
@@ -243,10 +238,9 @@ def main():
             refs_v  = [rows[i]["ref"]  for i in idxs]
             overall_bleu = float(bleu_corpus(preds_v, refs_v).get("bleu", 0.0))
 
-    # 5) Save per-row data
+    # 6) Save per-row data
     pred_path = os.path.join(args.outdir, "predictions.jsonl")
     csv_path  = os.path.join(args.outdir, "rows.csv")
-
     dump_jsonl(pred_path, rows)
 
     rows_for_csv = []
@@ -257,15 +251,15 @@ def main():
             "langpair": r.get("langpair"),
             "src_lang": r.get("src_lang"),
             "tgt_lang": r.get("tgt_lang"),
-            "esa_score": r.get("esa_score"),
-            "esa_bin": r.get("esa_bin"),
+            "difficulty_score": r.get("difficulty_score"),
+            "difficulty_bin": r.get("difficulty_bin"),
             "chrf": m.get("chrf"),
             "comet_seg": m.get("comet_seg"),
         })
     dump_csv(csv_path, rows_for_csv)
 
-    # 6) Summaries TODO: Add std to summary
-    def key_by_bin(r): return r.get("esa_bin", "UNBINNED")
+    # 7) Summaries
+    def key_by_bin(r): return r.get("difficulty_bin", "UNBINNED")
     def key_by_lp(r): return r.get("langpair", "unknown")
     def key_by_lp_bin(r): return key_by_lp(r) + " | " + key_by_bin(r)
 
@@ -301,7 +295,7 @@ def main():
             "by_langpair_bin": group_corpus_bleu(rows, key_by_lp_bin),
         }
 
-    # 7) Write summary.json
+    # 8) Write summary.json
     summary_path = os.path.join(args.outdir, "summary.json")
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump({
@@ -317,20 +311,25 @@ def main():
             "metrics": metrics_summary,
         }, f, ensure_ascii=False, indent=2)
 
-    # 8) Console summary
+    # 9) Console summary
     print("==== Info ===")
     print("Model:", args.model_id)
     print("Bins:", bin_tuples)
-    print("Sample assignments:", [assign_bin(s, bin_tuples) for s in [0, 33, 66, 100]])
+    # Show example assignments for three representative points (min/median/max if available)
+    scores = collect_difficulty_scores(items)
+    if scores:
+        ex = sorted(scores)
+        probe = [ex[0], ex[len(ex)//2], ex[-1]]
+        print("Sample assignments:", [assign_bin(v, bin_tuples) for v in probe])
     print("Saved:", pred_path)
     print("Saved:", csv_path)
     print("Saved:", summary_path)
-    print("\nESA bins:")
+    print("\nDifficulty bins:")
 
-    bins_seen = {r.get("esa_bin") for r in rows}
+    bins_seen = {r.get("difficulty_bin") for r in rows}
     for b in sorted(bins_seen):
-        n_in_bin = sum(1 for r in rows if r.get("esa_bin") == b)
-        parts = [("{:>12}".format(str(b))) + "  n=" + str(n_in_bin)]
+        n_in_bin = sum(1 for r in rows if r.get("difficulty_bin") == b)
+        parts = [("{:>18}".format(str(b))) + "  n=" + str(n_in_bin)]
         if "chrf" in metrics_summary:
             parts.append("chrf=" + str(metrics_summary["chrf"]["by_bin"].get(b, {}).get("mean")))
         if "comet" in metrics_summary:
@@ -338,6 +337,7 @@ def main():
         if "bleu" in metrics_summary:
             parts.append("bleu=" + str(metrics_summary["bleu"]["by_bin"].get(b, {}).get("bleu")))
         print("  " + "  ".join(parts))
+
 
 if __name__ == "__main__":
     main()

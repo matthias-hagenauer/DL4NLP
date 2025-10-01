@@ -4,7 +4,6 @@ import argparse
 from collections import defaultdict
 from typing import Dict, Iterable, List, Set, Tuple
 
-# Default targets (base language codes only; no regions)
 KEEP_TARGETS = {"de", "es", "zh", "nl"}
 
 def parse_lp(lp_field: str) -> Tuple[str, str, str]:
@@ -33,7 +32,6 @@ def iter_jsonl(path: str) -> Iterable[Dict]:
             try:
                 yield json.loads(line)
             except Exception:
-                # Skip malformed lines quietly
                 continue
 
 def filter_en_to_targets(input_path: str, targets: Set[str]) -> Iterable[Dict]:
@@ -45,7 +43,7 @@ def filter_en_to_targets(input_path: str, targets: Set[str]) -> Iterable[Dict]:
         try:
             src, tgt_base, norm_pair = parse_lp(obj["lp"])
             if src == "en" and tgt_base in targets:
-                obj["lp"] = norm_pair  # normalize lp in the output
+                obj["lp"] = norm_pair  
                 yield obj
         except Exception:
             continue
@@ -60,7 +58,6 @@ def collect_by_tgt(filtered_iter: Iterable[Dict], targets: Set[str]):
     seen_keys = set()
 
     for obj in filtered_iter:
-        # obj["lp"] is already normalized
         _, tgt_base, _ = parse_lp(obj["lp"])
         key = (obj.get("document_id"), obj.get("segment_id"), obj["lp"])
         if key in seen_keys:
@@ -130,17 +127,17 @@ def main():
                     help="all = write all EN→target lines; balanced = up to n per TARGET")
     ap.add_argument("--n", type=int, default=100,
                     help="Number of lines per TARGET language for balanced mode")
-    ap.add_argument("--seed", type=int, default=1337, help="Random seed for balanced sampling")
+    ap.add_argument("--seed", type=int, default=42, help="Random seed for balanced sampling")
     ap.add_argument("--targets", default="",
                     help="Comma-separated target langs to include (base codes only). Default: de,es,zh,nl")
     args = ap.parse_args()
 
     targets = parse_lang_list(args.targets) or KEEP_TARGETS
 
-    # 1) Filter to only EN→target lines (normalize 'lp')
+    # 1. Filter to only EN→target lines (normalize 'lp')
     filtered_iter = filter_en_to_targets(args.input, targets)
 
-    # 2) Build TARGET buckets + all filtered objs (dedup per doc+seg+lp)
+    # 2. Build TARGET buckets + all filtered objs (dedup per doc+seg+lp)
     by_tgt, all_filtered_objs = collect_by_tgt(filtered_iter, targets)
 
     if args.mode == "all":

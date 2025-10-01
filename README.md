@@ -16,21 +16,37 @@ You are free to leverage the **ALMA training data** for any purpose, including:
 
 ---
 
-## 📚 Related Work
+## Related Work
 - [A Survey on Model Compression for Large Language Models](https://arxiv.org/abs/2307.03172)  
 - [Tower: An Open Multilingual Large Language Model for Translation-Related Tasks](https://arxiv.org/abs/2402.17733)
+- [Estimating Machine Translation Difficulty](https://arxiv.org/abs/2508.10175)
 
 These resources provide background on the motivation, methods, and trade-offs in compressing LLMs.
 
 ---
 
-## 📂 Dataset
-We make use of the [ALMA dataset](https://github.com/fe1ixxu/ALMA), which includes machine translation data for multiple language pairs. (NOT TRUE: FIX) 
+## Dataset
 
-This dataset supports:
-- Training and fine-tuning
-- Knowledge distillation setups
-- Evaluation of compressed models
+We use the [WMT24++ dataset](https://huggingface.co/datasets/google/wmt24pp) as our primary source of machine translation data.  
+To control for translation difficulty, we process it with [translation difficulty estimation](https://github.com/zouharvi/translation-difficulty-estimation) ([paper](https://arxiv.org/abs/2508.10175)).
+
+### Language pairs
+We focus on the following pairs from WMT24++:
+- **en-de**
+- **en-nl**
+- **nl-zh**
+- **en-es**
+
+### Processed datasets
+We generate several JSONL datasets:
+- `wmt24_estimated.jsonl` — difficulty-estimated data for selected language pairs  
+- `wmt24_filtered_100.jsonl` — balanced subset with 100 examples per target language  
+
+### Example command
+You can create a subset yourself using the following command (specify `--n`):
+```bash
+python data/filter.py --output data/wmt24_filtered_100.jsonl --mode balanced --n 100
+```
 
 ---
 
@@ -90,21 +106,6 @@ pip install "unbabel-comet>=2.2.6"
 
 ## Quickstart
 
-You can run the models directly with the commands below, or submit the provided `run.job` script via Slurm.
-
-> **Note:** The examples here use the small demo file `data/subset.jsonl`.  
-> For the full dataset, replace `--data data/subset.jsonl` with:  
-> `--data data/wmt24_esa.jsonl`
-
-```bash
-# Default
-python main.py \
---data data/subset.jsonl \
---outdir runs/exp1_fp16 \
---eval_metrics chrf
-```
-
-
 ### Download quantized Tower Mistral model (GGUF format)
 
 ```bash
@@ -113,6 +114,11 @@ bash get_tm_gguf.sh
 ```
 
 ### Run examples TM baseline + quantized versions
+
+You can run models like this below.
+> **Note:** The examples here use the small demo file `data/filtered_100.jsonl`.  
+> For the full dataset, replace `--data data/filtered_100.jsonl` with:  
+> `--data data/wmt24_estimated.jsonl`
 
 ```bash
 # Baseline HuggingFace TowerMistral

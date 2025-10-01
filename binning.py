@@ -1,12 +1,18 @@
 import math
 import random
+from typing import Iterable, List, Optional, Sequence, Tuple
+
 import pandas as pd
 
-def parse_bins(spec):
+def parse_bins(spec: str) -> List[Tuple[float, float]]:
     """
-    Parse a string like "0-30,30-60,60-100" into a list of (lo, hi) float tuples.
+    Parse a string into a list of (lo, hi) float tuples.
+
+    Notes:
+      - Bins are numeric intervals; any real values are allowed (negatives too).
+      - Each segment must be 'lo-hi' with hi > lo.
     """
-    bins = []
+    bins: List[Tuple[float, float]] = []
     for part in spec.split(","):
         part = part.strip()
         if not part:
@@ -15,14 +21,14 @@ def parse_bins(spec):
             lo_s, hi_s = part.split("-")
             lo, hi = float(lo_s), float(hi_s)
         except Exception:
-            raise ValueError("Invalid bin segment '%s' in spec '%s'" % (part, spec))
+            raise ValueError(f"Invalid bin segment '{part}' in spec '{spec}'")
         if hi <= lo:
-            raise ValueError("Invalid bin '%s' (requires hi > lo)" % part)
+            raise ValueError(f"Invalid bin '{part}' (requires hi > lo)")
         bins.append((lo, hi))
     return bins
 
 
-def assign_bin(value, bins):
+def assign_bin(value: Optional[float], bins: Sequence[Tuple[float, float]]) -> str:
     """
     Assign a numeric value to a bin using (lo, hi] semantics:
       - First bin is [lo, hi]
@@ -45,48 +51,51 @@ def assign_bin(value, bins):
     return "UNBINNED"
 
 
-def coerce_esa(x):
+def coerce_esa(x) -> Optional[float]:
     """
-    Convert input to float if possible, otherwise return None.
+    Generic float coercion (name kept for backward-compat with imports).
+    Returns float(x) if finite, else None.
     """
     if x is None:
         return None
     try:
-        return float(x)
+        v = float(x)
+        return v if math.isfinite(v) else None
     except Exception:
         return None
 
 
-def quantile_bin_tuples(scores, q=3):
+def _valid_floats(values: Iterable) -> List[float]:
+    out: List[float] = []
+    for s in values:
+        v = coerce_esa(s)
+        if v is not None:
+            out.append(v)
+    return out
+
+
+def quantile_bin_tuples(scores: Iterable, q: int = 3) -> List[Tuple[float, float]]:
     """
-    Return quantile cut bins as a list of (lo, hi) tuples.
+    Return quantile cut bins as a list of (lo, hi) tuples over the data.
 
     - scores: iterable of numeric-like values (None/invalid are ignored)
-    - q: number of quantiles desired (e.g., 3 for terciles)
-    - Edges are clamped to [0, 100] and rounded to integers.
-    - Ensures strictly increasing edges after rounding; may yield fewer than q bins.
+    - q: desired number of quantiles (e.g., 3 for terciles)
+    - Works for arbitrary ranges (including negatives).
+    - Ensures strictly increasing edges; may yield fewer than q bins if edges collapse.
     """
-    vals = []
-    for s in scores:
-        try:
-            if s is not None:
-                vals.append(float(s))
-        except Exception:
-            pass
+    vals = _valid_floats(scores)
     if not vals:
         return []
 
-    # qcut may drop duplicate edges when data has many ties
-    _, edges = pd.qcut(pd.Series(vals), q=q, retbins=True, duplicates="drop")
+    try:
+        _, edges = pd.qcut(pd.Series(vals), q=q, retbins=True, duplicates="drop")
+    except Exception:
+        # Fallback to equal-width bins if qcut fails (e.g., too few unique values)
+        return equal_width_bins(vals, k=q)
 
-    # Clamp outer range and round to integers
-    edges[0] = 0
-    edges[-1] = 100
-    edges = [round(float(e)) for e in edges]
-
-    # Ensure strictly increasing edges after rounding
-    uniq = [edges[0]]
+    uniq: List[float] = [float(edges[0])]
     for e in edges[1:]:
+        e = float(e)
         if e > uniq[-1]:
             uniq.append(e)
 
@@ -96,7 +105,38 @@ def quantile_bin_tuples(scores, q=3):
     return [(uniq[i], uniq[i + 1]) for i in range(len(uniq) - 1)]
 
 
-def balance_bins(bin_tuples, items, seed=42):
+def equal_width_bins(scores: Iterable, k: int = 3) -> List[Tuple[float, float]]:
+    """
+    Build k equal-width bins over the observed range of scores (supports negatives).
+    Returns [] if the range is degenerate.
+
+    Example: scores in [-1.5, 0.2, 3.7], k=3
+      -> [(-1.5, 0.6333...), (0.6333..., 2.7666...), (2.7666..., 3.7)]
+    """
+    vals = _valid_floats(scores)
+    if not vals:
+        return []
+
+    lo = min(vals)
+    hi = max(vals)
+    if not math.isfinite(lo) or not math.isfinite(hi) or hi <= lo:
+        return [(lo, hi)]
+
+    width = (hi - lo) / float(k)
+    edges = [lo + i * width for i in range(k)] + [hi]
+
+    uniq: List[float] = [edges[0]]
+    for e in edges[1:]:
+        e = float(e)
+        if e > uniq[-1]:
+            uniq.append(e)
+    if len(uniq) < 2:
+        return []
+
+    return [(uniq[i], uniq[i + 1]) for i in range(len(uniq) - 1)]
+
+
+def balance_bins(bin_tuples: Sequence[Tuple[float, float]], items: List[dict], seed: int = 42) -> None:
     """
     Downsample items per bin to the size of the smallest bin.
 
@@ -105,20 +145,21 @@ def balance_bins(bin_tuples, items, seed=42):
     from the list; only their difficulty is marked.
 
     - bin_tuples: list of (lo, hi) numeric tuples
-    - items: list of dicts; expects 'esa_score' either at top level or in item['meta']['esa_score']
+    - items: list of dicts; expects 'difficulty_score' either at top level
+             or in item['meta']['difficulty_score']
     - seed: RNG seed for reproducible shuffling
     """
     if not bin_tuples:
         return
 
-    buckets = [[] for _ in range(len(bin_tuples))]
+    buckets: List[List[dict]] = [[] for _ in range(len(bin_tuples))]
 
-    # Assign items to buckets based on ESA score
+    # Assign items to buckets based on difficulty score
     for it in items:
-        score = it.get("esa_score")
+        score = it.get("difficulty_score")
         if score is None:
             meta = it.get("meta", {}) if isinstance(it.get("meta", {}), dict) else {}
-            score = meta.get("esa_score")
+            score = meta.get("difficulty_score")
         score = coerce_esa(score)
         if score is None:
             continue
@@ -128,7 +169,6 @@ def balance_bins(bin_tuples, items, seed=42):
                 buckets[i].append(it)
                 break
 
-    # If all buckets are empty, nothing to balance
     non_empty_sizes = [len(b) for b in buckets if len(b) > 0]
     if not non_empty_sizes:
         return
@@ -138,7 +178,6 @@ def balance_bins(bin_tuples, items, seed=42):
     rng = random.Random(seed)
     for bucket in buckets:
         rng.shuffle(bucket)
-        # Mark overflow as UNBINNED and drop from the bucket view
         while len(bucket) > target:
             bucket[-1]["difficulty"] = "UNBINNED"
             bucket.pop()
