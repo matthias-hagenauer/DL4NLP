@@ -1,81 +1,97 @@
-#!/usr/bin/env python3
 import json
 import random
 import argparse
 from collections import defaultdict
 from typing import Dict, Iterable, List, Set, Tuple
 
-# Targets you care about (exclude 'en')
-KEEP_TARGETS = {"pt", "es", "fr", "de", "nl", "it", "ko", "zh", "ru"}
+# Default targets (base language codes only; no regions)
+KEEP_TARGETS = {"de", "es", "zh", "nl"}
 
-def parse_langs(langs_field: str) -> Tuple[str, str]:
-    # Expected format "xx-yy"
-    parts = langs_field.split("-")
+def parse_lp(lp_field: str) -> Tuple[str, str, str]:
+    """
+    Parse language pair in new schema ("xx-yy" or "xx-yy_REG") and
+    return (src, tgt_base, normalized_pair).
+    Examples:
+      - "en-zh"     -> ("en", "zh", "en-zh")
+      - "en-zh_CN"  -> ("en", "zh", "en-zh")
+      - "en-de_DE"  -> ("en", "de", "en-de")
+    """
+    parts = lp_field.split("-")
     if len(parts) != 2:
-        raise ValueError(f"Bad langs field: {langs_field}")
-    return parts[0], parts[1]
+        raise ValueError(f"Bad lp field: {lp_field}")
+    src = parts[0]
+    tgt_full = parts[1]
+    tgt_base = tgt_full.split("_", 1)[0]  # strip regional suffix if present
+    return src, tgt_base, f"{src}-{tgt_base}"
 
-def iter_jsonl(path: str) -> Iterable[Tuple[Dict, str]]:
+def iter_jsonl(path: str) -> Iterable[Dict]:
     with open(path, "r", encoding="utf-8") as f:
         for i, line in enumerate(f, 1):
             line = line.rstrip("\n")
             if not line:
                 continue
             try:
-                obj = json.loads(line)
-                yield obj, line
+                yield json.loads(line)
             except Exception:
                 # Skip malformed lines quietly
                 continue
 
-def filter_en_to_targets(input_path: str, targets: Set[str]) -> Iterable[Tuple[Dict, str]]:
+def filter_en_to_targets(input_path: str, targets: Set[str]) -> Iterable[Dict]:
     """
-    Yield (obj, raw_line) for lines where src == 'en' and tgt in `targets`.
+    Yield JSON objects where src == 'en' and tgt_base in `targets`.
+    Normalize 'lp' before yielding.
     """
-    for obj, raw in iter_jsonl(input_path):
+    for obj in iter_jsonl(input_path):
         try:
-            s, t = parse_langs(obj["langs"])
-            if s == "en" and t in targets:
-                yield obj, raw
+            src, tgt_base, norm_pair = parse_lp(obj["lp"])
+            if src == "en" and tgt_base in targets:
+                obj["lp"] = norm_pair  # normalize lp in the output
+                yield obj
         except Exception:
             continue
 
-def collect_by_tgt(filtered_iter: Iterable[Tuple[Dict, str]], targets: Set[str]):
+def collect_by_tgt(filtered_iter: Iterable[Dict], targets: Set[str]):
     """
-    Build mapping tgt_lang -> list of raw lines (dedup all_lines in arrival order).
+    Build mapping tgt_lang -> list of JSON objs; also return all objs in arrival order.
+    Deduplicate by (document_id, segment_id, lp) so different targets for the same segment are kept.
     """
-    by_tgt = defaultdict(list)
-    all_lines, seen_raw = [], set()
+    by_tgt: Dict[str, List[Dict]] = defaultdict(list)
+    all_objs: List[Dict] = []
+    seen_keys = set()
 
-    for obj, raw in filtered_iter:
-        _, t = parse_langs(obj["langs"])
-        if t in targets:
-            by_tgt[t].append(raw)
-        if raw not in seen_raw:
-            seen_raw.add(raw)
-            all_lines.append(raw)
+    for obj in filtered_iter:
+        # obj["lp"] is already normalized
+        _, tgt_base, _ = parse_lp(obj["lp"])
+        key = (obj.get("document_id"), obj.get("segment_id"), obj["lp"])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
 
-    return by_tgt, all_lines
+        if tgt_base in targets:
+            by_tgt[tgt_base].append(obj)
+        all_objs.append(obj)
 
-def write_lines(lines: List[str], output_path: str) -> None:
+    return by_tgt, all_objs
+
+def write_objs(objs: List[Dict], output_path: str) -> None:
     with open(output_path, "w", encoding="utf-8") as out:
-        for ln in lines:
-            out.write(ln if ln.endswith("\n") else ln + "\n")
+        for obj in objs:
+            out.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
-def balanced_sample(by_tgt: Dict[str, List[str]], targets: Set[str], n_per_lang: int, seed: int = None):
+def balanced_sample(by_tgt: Dict[str, List[Dict]], targets: Set[str], n_per_lang: int, seed: int = None):
     """
     Greedy de-duplicated sampler: up to n_per_lang per TARGET language.
-    A line appears at most once overall.
+    A JSON object appears at most once overall (by doc_id, segment_id, lp).
     """
     if seed is not None:
         random.seed(seed)
 
-    # Ensure every target has a bucket
     buckets = {t: by_tgt.get(t, []).copy() for t in targets}
     for t in buckets:
         random.shuffle(buckets[t])
 
-    chosen, chosen_set = [], set()
+    chosen: List[Dict] = []
+    seen_keys = set()
     counts = {t: 0 for t in targets}
 
     progress = True
@@ -86,11 +102,12 @@ def balanced_sample(by_tgt: Dict[str, List[str]], targets: Set[str], n_per_lang:
                 continue
             bucket = buckets[t]
             while bucket and counts[t] < n_per_lang:
-                ln = bucket.pop()
-                if ln in chosen_set:
+                obj = bucket.pop()
+                key = (obj.get("document_id"), obj.get("segment_id"), obj["lp"])
+                if key in seen_keys:
                     continue
-                chosen.append(ln)
-                chosen_set.add(ln)
+                chosen.append(obj)
+                seen_keys.add(key)
                 counts[t] += 1
                 progress = True
                 break
@@ -103,31 +120,35 @@ def parse_lang_list(opt: str) -> Set[str]:
     return {x.strip() for x in opt.split(",") if x.strip()}
 
 def main():
-    ap = argparse.ArgumentParser(description="Filter en→X JSONL and (optionally) balance by TARGET language.")
-    ap.add_argument("--input", required=True, help="Path to input .jsonl")
+    ap = argparse.ArgumentParser(
+        description="Filter EN→{DE,ES,ZH,NL} from NEW JSONL schema, normalize lp, and (optionally) balance by target language."
+    )
+    ap.add_argument("--input", required=False, default="data/wmt24_estimated.jsonl",
+                    help="Path to input .jsonl (default: data/wmt24_estimated.jsonl)")
     ap.add_argument("--output", required=True, help="Path to output .jsonl")
     ap.add_argument("--mode", choices=["all", "balanced"], default="all",
-                    help="all = write all en→target lines; balanced = up to n per TARGET")
-    ap.add_argument("--n", type=int, default=100, help="Number of lines per TARGET language for balanced mode")
+                    help="all = write all EN→target lines; balanced = up to n per TARGET")
+    ap.add_argument("--n", type=int, default=100,
+                    help="Number of lines per TARGET language for balanced mode")
     ap.add_argument("--seed", type=int, default=1337, help="Random seed for balanced sampling")
     ap.add_argument("--targets", default="",
-                    help="Comma-separated target langs to include (default: pt,es,fr,de,nl,it,ko,zh,ru)")
+                    help="Comma-separated target langs to include (base codes only). Default: de,es,zh,nl")
     args = ap.parse_args()
 
     targets = parse_lang_list(args.targets) or KEEP_TARGETS
 
-    # 1) Filter to only en→target lines
+    # 1) Filter to only EN→target lines (normalize 'lp')
     filtered_iter = filter_en_to_targets(args.input, targets)
 
-    # 2) Build TARGET buckets + all filtered lines
-    by_tgt, all_filtered_lines = collect_by_tgt(filtered_iter, targets)
+    # 2) Build TARGET buckets + all filtered objs (dedup per doc+seg+lp)
+    by_tgt, all_filtered_objs = collect_by_tgt(filtered_iter, targets)
 
     if args.mode == "all":
-        write_lines(all_filtered_lines, args.output)
-        print(f"Wrote {len(all_filtered_lines)} en→target lines to {args.output}")
+        write_objs(all_filtered_objs, args.output)
+        print(f"Wrote {len(all_filtered_objs)} en→target lines to {args.output}")
     else:
         chosen, counts = balanced_sample(by_tgt, targets, args.n, seed=args.seed)
-        write_lines(chosen, args.output)
+        write_objs(chosen, args.output)
         filled = sum(1 for t in targets if counts.get(t, 0) >= args.n)
         print(f"Wrote {len(chosen)} lines to {args.output}.")
         print(f"Targets fully filled: {filled}/{len(targets)}.")

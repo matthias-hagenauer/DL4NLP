@@ -36,5 +36,3 @@ cd $HOME/dl4nlp/DL4NLP/
 
 # # 8-bit quantized GGUF
 # srun python main.py --model_id TM_8bit --data data/balanced_100.jsonl --n_gpu_layers 40 --bins quantile_balanced
-
-srun python results/plot.py --base results --models TM TM_4bit TM_8bit 
