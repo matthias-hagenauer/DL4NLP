@@ -1,6 +1,29 @@
 import re
+from transformers import pipeline
+import os
 
 DEFAULT_MODEL_ID = "Unbabel/TowerInstruct-Mistral-7B-v0.2"
+
+GGUF_DEFAULTS = {
+    "TM_2bit": ("models/gguf/2bit/TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf"),
+    "TM_3bit": ("models/gguf/3bit/TowerInstruct-Mistral-7B-v0.2-Q3_K_L.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q3_K_L.gguf"),
+    "TM_4bit": ("models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf"),
+    "TM_5bit": ("models/gguf/5bit/TowerInstruct-Mistral-7B-v0.2-Q5_K_M.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q5_K_M.gguf"),
+    "TM_6bit": ("models/gguf/6bit/TowerInstruct-Mistral-7B-v0.2-Q6_K.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q6_K.gguf"),
+    "TM_8bit": ("models/gguf/8bit/TowerInstruct-Mistral-7B-v0.2-Q8_0.gguf",
+                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+                "TowerInstruct-Mistral-7B-v0.2-Q8_0.gguf"),
+}
 
 LANG_NAME = {
     "en": "English",  "pt": "Portuguese", "es": "Spanish", "fr": "French",
@@ -22,7 +45,6 @@ def _build_prompt(tokenizer, src_text, src_lang, tgt_lang):
         "{tgt}:"
     ).format(src=_lang_name(src_lang), tgt=_lang_name(tgt_lang), text=src_text)
 
-    # Use chat template if available (HF chat models)
     if tokenizer is not None and hasattr(tokenizer, "apply_chat_template"):
         messages = [{"role": "user", "content": content}]
         try:
@@ -30,92 +52,114 @@ def _build_prompt(tokenizer, src_text, src_lang, tgt_lang):
                 messages, tokenize=False, add_generation_prompt=True
             )
         except Exception:
-            # Fall back to plain content if anything goes wrong
             pass
     return content
 
+def _collect_eos_ids(tokenizer):
+    """Include regular EOS and chat end-of-message if present."""
+    eos_ids = []
+    if getattr(tokenizer, "eos_token_id", None) is not None:
+        eos_ids.append(tokenizer.eos_token_id)
+    try:
+        im_end_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if im_end_id is not None and im_end_id != -1:
+            eos_ids.append(im_end_id)
+    except Exception:
+        pass
+    eos_ids = list(dict.fromkeys(eos_ids))
+    return eos_ids
+
+# ---------------- NEW: GGUF backend (llama.cpp) ----------------
+class GGUFModel:
+    """
+    Loads a local .gguf file or pulls from Hugging Face via llama.cpp.
+    Works on CPU; can use GPU if llama-cpp-python was installed with CUDA.
+    """
+    def __init__(self, repo_id=None, filename=None, model_path=None,
+                 n_ctx=4096, n_gpu_layers=0, **kwargs):
+        try:
+            from llama_cpp import Llama
+        except Exception as e:
+            raise RuntimeError("Please `pip install llama-cpp-python` first.") from e
+
+        if model_path:
+            self.llm = Llama(model_path=model_path, n_ctx=n_ctx,
+                             n_gpu_layers=n_gpu_layers, **kwargs)
+        else:
+            # pulls weights from HF the first time and caches them
+            self.llm = Llama.from_pretrained(
+                repo_id=repo_id, filename=filename,
+                n_ctx=n_ctx, n_gpu_layers=n_gpu_layers, **kwargs
+            )
+
+        # No tokenizer object here; we pass None to _build_prompt
+        self.tokenizer = None
+
+    def translate_batch(self, items, **gen_kwargs):
+        max_new_tokens = gen_kwargs.get("max_new_tokens", 256)
+        do_sample      = gen_kwargs.get("do_sample", False)
+        temperature    = (gen_kwargs.get("temperature", 0.7) if do_sample else 0.0)
+
+        preds = []
+        for it in items:
+            prompt = _build_prompt(None, it.get("src",""),
+                                   it.get("src_lang","en"),
+                                   it.get("tgt_lang","en"))
+
+            # plain completion interface is robust for instruct models
+            out = self.llm.create_completion(
+                prompt=prompt,
+                max_tokens=max_new_tokens,
+                temperature=temperature,
+                stop=["\n\n", "</s>", "<|endoftext|>", "Assistant:"]
+            )
+            text = out["choices"][0]["text"]
+            # light cleanup like the HF path does
+            target_label = _lang_name(it.get("tgt_lang",""))
+            label_str = f"{target_label}:"
+            if label_str in text:
+                text = text.split(label_str, 1)[-1]
+            text = re.split(r"(?:</s>|<\|endoftext\|>|Assistant:)", text)[0]
+            preds.append(text.strip().strip('"').strip("“”").strip())
+        return preds
+# ---------------------------------------------------------------
 
 class HFPipelineModel:
-    """
-    Quantization options:
-      - quant='none' → standard weights (device_map respected)
-      - quant='8bit' → load_in_8bit=True (requires bitsandbytes)
-      - quant='4bit' → load_in_4bit=True with NF4 (requires bitsandbytes)
-    """
+    """Simple HF pipeline wrapper (no quantization)."""
 
-    def __init__(self, model_id=None, quant="none", device_map="auto"):
+    def __init__(self, model_id=None, device_map="auto"):
         self.model_id = model_id or DEFAULT_MODEL_ID
-        self.quant = (quant or "none").lower()
         self.device_map = device_map
 
-        try:
-            from transformers import (
-                pipeline,
-                AutoModelForCausalLM,
-                AutoTokenizer,
-                BitsAndBytesConfig,
-            )
-        except Exception as e:
-            raise RuntimeError(
-                "Please install 'transformers' (and 'bitsandbytes' for 8/4-bit)."
-            ) from e
-
-        # Build pipeline according to quantization mode
-        if self.quant == "none":
-            self.pipe = pipeline(
-                "text-generation",
-                model=self.model_id,
-                device_map=self.device_map,
-            )
-            self.tokenizer = self.pipe.tokenizer
-
-        elif self.quant in ("8bit", "4bit"):
-            # Explicit tokenizer + model load
-            tok = AutoTokenizer.from_pretrained(self.model_id, use_fast=True)
-            load_kwargs = {"device_map": self.device_map}
-
-            if self.quant == "8bit":
-                load_kwargs["load_in_8bit"] = True
-            else:
-                # 4-bit with NF4
-                try:
-                    qconf = BitsAndBytesConfig(
-                        load_in_4bit=True,
-                        bnb_4bit_quant_type="nf4",
-                        bnb_4bit_compute_dtype=None,  # let HF choose
-                    )
-                except Exception as e:
-                    raise RuntimeError(
-                        "bitsandbytes not available or misconfigured for 4-bit."
-                    ) from e
-                load_kwargs["load_in_4bit"] = True
-                load_kwargs["quantization_config"] = qconf
-
-            model = AutoModelForCausalLM.from_pretrained(self.model_id, **load_kwargs)
-
-            # Build the pipeline using the loaded model/tokenizer
-            self.pipe = pipeline(
-                "text-generation",
-                model=model,
-                tokenizer=tok,
-                device_map=self.device_map,
-            )
-            self.tokenizer = tok
-
-        else:
-            raise ValueError("Unknown quant option. Use 'none', '8bit', or '4bit'.")
+        self.pipe = pipeline(
+            "text-generation",
+            model=self.model_id,
+            device_map=self.device_map,
+        )
+        self.tokenizer = self.pipe.tokenizer
+        self._eos_ids = _collect_eos_ids(self.tokenizer)
+        # Use eos as pad to silence warnings/ensure batching works
+        self._pad_id = getattr(self.tokenizer, "eos_token_id", None)
 
     def translate_batch(self, items, **gen_kwargs):
         """
         items: list of dicts with keys: 'src', 'src_lang', 'tgt_lang'
-        returns: list of translated strings
+        returns: list of translated strings (one per input)
         """
-        # Safe defaults; deterministic unless you set do_sample=True explicitly
+        # Deterministic, one hypothesis per input
         params = {
-            "max_new_tokens": 256,
+            "max_new_tokens": 128,
             "do_sample": False,
+            "num_return_sequences": 1,
             "return_full_text": False,
+            "temperature": 0.0,  # redundant with do_sample=False, but explicit
         }
+        # Stop at assistant turn end
+        if self._eos_ids:
+            params["eos_token_id"] = self._eos_ids if len(self._eos_ids) > 1 else self._eos_ids[0]
+        if self._pad_id is not None:
+            params["pad_token_id"] = self._pad_id
+
         params.update(gen_kwargs or {})
 
         # Build prompts
@@ -127,37 +171,67 @@ class HFPipelineModel:
             prompts.append(_build_prompt(self.tokenizer, src_text, src_lang, tgt_lang))
 
         # Generate
-        outputs = self.pipe(prompts, **params)  # list of lists of dicts
+        outputs = self.pipe(prompts, **params)  # list[list[dict]]
 
-        # Post-process generations
+        # Post-process → exactly one line per input
         preds = []
         for prompt, out, it in zip(prompts, outputs, items):
-            # Robustly get text
             text = ""
             if out and isinstance(out, list) and isinstance(out[0], dict):
                 text = out[0].get("generated_text", "") or ""
 
-            # If backend ignored return_full_text=False, remove prompt prefix
-            if text.startswith(prompt):
-                cont = text[len(prompt):]
-            else:
-                cont = text
+            cont = text[len(prompt):] if text.startswith(prompt) else text
 
-            # Remove a single echoed "TargetLang:" label if present
-            target_label = _lang_name(it.get("tgt_lang", ""))
-            label_str = f"{target_label}:"
-            if label_str in cont:
-                cont = cont.split(label_str, 1)[-1]
+            # Strip a single echoed "TargetLang:" if present
+            tgt_label = f"{_lang_name(it.get('tgt_lang', ''))}:"
+            if tgt_label in cont:
+                cont = cont.split(tgt_label, 1)[-1]
 
-            # Trim common end tokens/artifacts
-            cont = re.split(r"(?:</s>|<\|endoftext\|>|Assistant:)", cont)[0]
+            # Hard stops: end-of-message markers or fake new turns
+            cont = re.split(
+                r"(?:<\|im_end\|>|</s>|<\|endoftext\|>|\n<\|im_start\|>user|\n\s*User:|\n\s*Assistant:)",
+                cont,
+                maxsplit=1,
+            )[0]
+            # Also cut if the source-language label reappears
+            src_label = f"{_lang_name(it.get('src_lang', ''))}:"
+            cont = cont.split(src_label, 1)[0]
 
-            # Basic stripping of quotes/whitespace
-            cont = cont.strip().strip('"').strip("“”").strip()
-            preds.append(cont)
+            # Keep only the first non-empty line
+            first_line = next((ln for ln in cont.strip().splitlines() if ln.strip()), "")
+            pred = first_line.strip().strip('"').strip("“”").strip()
+            preds.append(pred)
 
         return preds
 
+def build_model(model_id=None, device_map="auto",
+                gguf_repo=None, gguf_file=None, gguf_path=None,
+                n_ctx=4096, n_gpu_layers=0):
+    """
+    Single entry point:
+      - model_id == "TM"                 -> HF baseline (Unbabel/TowerInstruct-Mistral-7B-v0.2)
+      - model_id in {"TM_2bit", ...}     -> GGUF quant under models/gguf/<bit>/..., fallback to HF repo if missing
+      - otherwise                        -> treat as Hugging Face model id
+    Optional overrides: gguf_path, gguf_repo, gguf_file
+    """
+    mid = model_id or "TM"
 
-def build_model(model_id=None, quant="none", device_map="auto"):
-    return HFPipelineModel(model_id=model_id, quant=quant, device_map=device_map)
+    # Friendly HF baseline
+    if mid == "TM":
+        return HFPipelineModel(model_id=DEFAULT_MODEL_ID, device_map=device_map)
+
+    # Friendly GGUF variants
+    if mid in GGUF_DEFAULTS:
+        local_path_default, repo_default, file_default = GGUF_DEFAULTS[mid]
+        # allow explicit overrides
+        use_path = gguf_path or (local_path_default if os.path.exists(local_path_default) else None)
+        repo     = gguf_repo or repo_default
+        fname    = gguf_file or file_default
+
+        if use_path:
+            return GGUFModel(model_path=use_path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
+        else:
+            return GGUFModel(repo_id=repo, filename=fname, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
+
+    # Any other id -> assume HF hub id
+    return HFPipelineModel(model_id=mid, device_map=device_map)

@@ -46,16 +46,38 @@ COMET is **optional** (only needed if you run `--eval_metrics ... comet`). See *
 ### 1. Create a Conda environment
 
 ```bash
+# Create env
 conda create -y -n nlp python=3.10
-conda activate nlp
+source activate nlp
 
+# Upgrade pip
 pip install --upgrade pip
+
+# Install PyTorch (CUDA 11.8 build, works on Snellius A100 GPUs)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
+# Install project requirements (Transformers baseline, metrics, etc.)
 pip install -r requirements.txt
 
-# Extra runtime helpers that models/metrics often need:
+# Extra helpers some models/metrics need
 pip install sentencepiece protobuf safetensors
+
+# --- GGUF backend (quantized TowerMistral) ---
+# 1) Install llama.cpp Python binding (CUDA 12.2 build, GPU offload support)
+pip install --upgrade --no-cache-dir \
+  --index-url https://abetlen.github.io/llama-cpp-python/whl/cu122 \
+  --extra-index-url https://pypi.org/simple \
+  llama-cpp-python==0.3.16
+
+# 2) Install CUDA 12.2 runtime libraries (needed by llama-cpp wheel)
+pip install "nvidia-cuda-runtime-cu12==12.2.*" "nvidia-cublas-cu12==12.2.*"
+
+# 3) Ensure a new enough C++ runtime (libstdc++ ≥ 13)
+conda install -y -c conda-forge "libstdcxx-ng>=13" "libgcc-ng>=13"
+
+chmod +x setup_llamacpp_cuda12.sh
+bash setup_llamacpp_cuda12.sh
+conda deactivate && conda activate nlp
 ```
 
 ### Optional: COMET metric (for --eval_metrics comet)
@@ -68,30 +90,49 @@ pip install "unbabel-comet>=2.2.6"
 
 ## Quickstart
 
-Note: this is a subset, for full dataset use `wmt24_esa.jsonl`.
+You can run the models directly with the commands below, or submit the provided `run.job` script via Slurm.
+
+> **Note:** The examples here use the small demo file `data/subset.jsonl`.  
+> For the full dataset, replace `--data data/subset.jsonl` with:  
+> `--data data/wmt24_esa.jsonl`
 
 ```bash
 # Default
 python main.py \
 --data data/subset.jsonl \
 --outdir runs/exp1_fp16 \
---eval_metrics chrf,bleu
-
-# 8-bit quantization
-python main.py \
---data data/subset.jsonl \
---outdir runs/exp1_bnb8 \
---model_id Unbabel/TowerInstruct-Mistral-7B-v0.2 \
---quant 8bit \
---eval_metrics chrf,bleu
-
-# 4-bit quantization
-python main.py \
---data data/subset.jsonl \
---outdir runs/exp1_bnb4 \
---model_id Unbabel/TowerInstruct-Mistral-7B-v0.2 \
---quant 4bit \
---eval_metrics chrf,bleu
+--eval_metrics chrf
 ```
 
 
+### Download quantized Tower Mistral model (GGUF format)
+
+```bash
+chmod +x get_tm_gguf.sh
+bash get_tm_gguf.sh
+```
+
+### Run examples TM baseline + quantized versions
+
+```bash
+# Baseline HuggingFace TowerMistral
+python main.py --model_id TM --data data/subset.jsonl
+
+# 2-bit quantized GGUF (local if available, else HF)
+python main.py --model_id TM_2bit --data data/subset.jsonl --n_gpu_layers 40
+
+# 3-bit quantized GGUF
+python main.py --model_id TM_3bit --data data/subset.jsonl --n_gpu_layers 40
+
+# 4-bit quantized GGUF (with explicit local override)
+python main.py --model_id TM_4bit --gguf_path models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf --data data/subset.jsonl --n_gpu_layers 40
+
+# 5-bit quantized GGUF
+python main.py --model_id TM_5bit --data data/subset.jsonl --n_gpu_layers 40
+
+# 6-bit quantized GGUF
+python main.py --model_id TM_6bit --data data/subset.jsonl --n_gpu_layers 40
+
+# 8-bit quantized GGUF
+python main.py --model_id TM_8bit --data data/subset.jsonl --n_gpu_layers 40
+```

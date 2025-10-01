@@ -34,26 +34,6 @@ def bleu_corpus(preds, refs):
     return bleu.compute(predictions=preds, references=[[r] for r in refs])
 
 
-def sentence_bleu_scores(preds, refs):
-    """
-    Returns a list of sentence-level BLEU scores (SacreBLEU), one per pair.
-    """
-    if len(preds) != len(refs):
-        raise ValueError("preds and refs must have the same length")
-    try:
-        from sacrebleu.metrics import BLEU  
-    except Exception as e:
-        raise RuntimeError("Install sacrebleu for sentence BLEU: pip install sacrebleu") from e
-
-    bleu = BLEU(effective_order=True)
-    scores = []
-    for hyp, ref in zip(preds, refs):
-        s = bleu.sentence_score(hyp, [ref]).score
-        scores.append(float(s))
-        
-    return scores
-
-
 def comet22_scores(srcs, mts, refs, gpus=1, batch_size=8):
     """
     Returns:
