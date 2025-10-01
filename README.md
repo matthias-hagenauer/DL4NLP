@@ -40,6 +40,7 @@ We focus on the following pairs from WMT24++:
 ### Processed datasets
 We generate several JSONL datasets:
 - `wmt24_estimated.jsonl` — difficulty-estimated data for selected language pairs  
+- `wmt24_estimated_normalized.jsonl` - normalized difficulty scores ([0-1]) using minmax normalization 
 - `wmt24_filtered_5.jsonl` — balanced subset with 5 examples per target language for very easy testing
 - `wmt24_filtered_100.jsonl` — balanced subset with 100 examples per target language  
 
