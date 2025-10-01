@@ -1,0 +1,2 @@
+ignores sents with bad source is_bad_source: A Boolean that indicates whether this source is low quality (e.g., HTML, URLs, emoijs). In the paper, the segments marked as true were removed from the evaluation, and we recommend doing the same.
+the difficulty score field is named "difficulty_score"
