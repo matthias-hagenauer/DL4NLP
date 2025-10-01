@@ -176,9 +176,6 @@ def main():
     if is_balanced:
         balance_bins(bin_tuples, items, seed=42)
 
-    print("Bins:", bin_tuples)
-    print("Sample assignments:", [assign_bin(s, bin_tuples) for s in [0, 33, 66, 100]])
-
     #########################
 
     # 3) Attach ESA score/bin
@@ -322,6 +319,10 @@ def main():
         }, f, ensure_ascii=False, indent=2)
 
     # 8) Console summary
+    print("==== Info ===")
+    print("Model:", args.model_id)
+    print("Bins:", bin_tuples)
+    print("Sample assignments:", [assign_bin(s, bin_tuples) for s in [0, 33, 66, 100]])
     print("Saved:", pred_path)
     print("Saved:", csv_path)
     print("Saved:", summary_path)
