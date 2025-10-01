@@ -17,7 +17,7 @@ source activate nlp
 cd $HOME/dl4nlp/DL4NLP/
 
 # Baseline HuggingFace TowerMistral
-#srun python main.py --model_id TM --data data/esa_scores_mistral.jsonl --bins quantile_balanced
+# srun python main.py --model_id TM --data data/balanced_100.jsonl --bins quantile_balanced
 
 # # 2-bit quantized GGUF (local if available, else HF)
 # srun python main.py --model_id TM_2bit --data data/esa_scores_mistral.jsonl --n_gpu_layers 40 --bins quantile_balanced
@@ -26,7 +26,7 @@ cd $HOME/dl4nlp/DL4NLP/
 # srun python main.py --model_id TM_3bit --data data/esa_scores_mistral.jsonl --n_gpu_layers 40 --bins quantile_balanced
 
 # # 4-bit quantized GGUF (with explicit local override)
-# srun python main.py --model_id TM_4bit --gguf_path models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf --data data/esa_scores_mistral.jsonl --n_gpu_layers 40 --bins quantile_balanced
+# srun python main.py --model_id TM_4bit --gguf_path models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf --data data/balanced_100.jsonl --n_gpu_layers 40 --bins quantile_balanced
 
 # # 5-bit quantized GGUF
 # srun python main.py --model_id TM_5bit --data data/esa_scores_mistral.jsonl --n_gpu_layers 40 --bins quantile_balanced
@@ -35,4 +35,4 @@ cd $HOME/dl4nlp/DL4NLP/
 # srun python main.py --model_id TM_6bit --data data/esa_scores_mistral.jsonl --n_gpu_layers 40 --bins quantile_balanced
 
 # # 8-bit quantized GGUF
-# srun python main.py --model_id TM_8bit --data data/esa_scores_mistral.jsonl --n_gpu_layers 40 --bins quantile_balanced
+srun python main.py --model_id TM_8bit --data data/balanced_100.jsonl --n_gpu_layers 40 --bins quantile_balanced
