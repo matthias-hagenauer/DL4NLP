@@ -40,12 +40,12 @@ We focus on the following pairs from WMT24++:
 ### Processed datasets
 We generate several JSONL datasets:
 - `wmt24_estimated.jsonl` — difficulty-estimated data for selected language pairs  
-- `wmt24_filtered_100.jsonl` — balanced subset with 100 examples per target language  
+- `wmt24_filtered_100.jsonl` — balanced wmt24_filtered_100 with 100 examples per target language  
 
 ### Example command
-You can create a subset yourself using the following command (specify `--n`):
+You can create a wmt24_filtered_100 yourself using the following command (specify `--n`):
 ```bash
-python data/filter.py --output data/wmt24_filtered_100.jsonl --mode balanced --n 100
+python data/filter.py --mode balanced --n 100
 ```
 
 ---
@@ -116,29 +116,29 @@ bash get_tm_gguf.sh
 ### Run examples TM baseline + quantized versions
 
 You can run models like this below.
-> **Note:** The examples here use the small demo file `data/filtered_100.jsonl`.  
-> For the full dataset, replace `--data data/filtered_100.jsonl` with:  
+> **Note:** The examples here use the small demo file `data/wmt24_filtered_100.jsonl`.  
+> For the full dataset, replace `--data data/wmt24_filtered_100.jsonl` with:  
 > `--data data/wmt24_estimated.jsonl`
 
 ```bash
 # Baseline HuggingFace TowerMistral
-python main.py --model_id TM --data data/subset.jsonl
+python main.py --model_id TM --data data/wmt24_filtered_100.jsonl
 
 # 2-bit quantized GGUF (local if available, else HF)
-python main.py --model_id TM_2bit --data data/subset.jsonl --n_gpu_layers 40
+python main.py --model_id TM_2bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
 
 # 3-bit quantized GGUF
-python main.py --model_id TM_3bit --data data/subset.jsonl --n_gpu_layers 40
+python main.py --model_id TM_3bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
 
 # 4-bit quantized GGUF (with explicit local override)
-python main.py --model_id TM_4bit --gguf_path models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf --data data/subset.jsonl --n_gpu_layers 40
+python main.py --model_id TM_4bit --gguf_path models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
 
 # 5-bit quantized GGUF
-python main.py --model_id TM_5bit --data data/subset.jsonl --n_gpu_layers 40
+python main.py --model_id TM_5bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
 
 # 6-bit quantized GGUF
-python main.py --model_id TM_6bit --data data/subset.jsonl --n_gpu_layers 40
+python main.py --model_id TM_6bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
 
 # 8-bit quantized GGUF
-python main.py --model_id TM_8bit --data data/subset.jsonl --n_gpu_layers 40
+python main.py --model_id TM_8bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
 ```

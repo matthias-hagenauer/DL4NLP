@@ -122,7 +122,8 @@ def main():
     )
     ap.add_argument("--input", required=False, default="data/wmt24_estimated.jsonl",
                     help="Path to input .jsonl (default: data/wmt24_estimated.jsonl)")
-    ap.add_argument("--output", required=True, help="Path to output .jsonl")
+    ap.add_argument("--output", required=False, default="data/wmt24_filtered_{n}.jsonl",
+                    help="Path to output .jsonl (default: data/wmt24_filtered_{n}.jsonl, with n substituted)")
     ap.add_argument("--mode", choices=["all", "balanced"], default="all",
                     help="all = write all EN→target lines; balanced = up to n per TARGET")
     ap.add_argument("--n", type=int, default=100,
@@ -131,6 +132,11 @@ def main():
     ap.add_argument("--targets", default="",
                     help="Comma-separated target langs to include (base codes only). Default: de,es,zh,nl")
     args = ap.parse_args()
+
+    if "{n}" in args.output:
+        args.output = args.output.format(n=args.n)
+    elif not args.output:
+        args.output = "data/wmt24_filtered.jsonl"
 
     targets = parse_lang_list(args.targets) or KEEP_TARGETS
 
