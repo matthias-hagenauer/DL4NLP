@@ -1,7 +1,6 @@
 import json
 import argparse
 from sentinel_metric import download_model, load_from_checkpoint
-from ..data import load_jsonl_pairs
 
 model_path = download_model("Prosho/sentinel-src-24")
 model = load_from_checkpoint(model_path)
