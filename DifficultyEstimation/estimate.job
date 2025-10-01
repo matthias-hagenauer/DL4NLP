@@ -15,4 +15,7 @@ module load Anaconda3/2023.07-2
 source activate difficulty
 
 # Running code
-srun python data.py --input en-de_DE.jsonl --output test.jsonl
+srun python add_difficulty_estimation.py --input ./data/en-de_DE.jsonl --output ./data/en-de_augmented.jsonl
+srun python add_difficulty_estimation.py --input ./data/en-es_MX.jsonl --output ./data/en-es_augmented.jsonl
+srun python add_difficulty_estimation.py --input ./data/en-nl_NL.jsonl --output ./data/en-nl_augmented.jsonl
+srun python add_difficulty_estimation.py --input ./data/en-zh_CN.jsonl --output ./data/en-zh_augmented.jsonl
