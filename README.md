@@ -40,10 +40,11 @@ We focus on the following pairs from WMT24++:
 ### Processed datasets
 We generate several JSONL datasets:
 - `wmt24_estimated.jsonl` — difficulty-estimated data for selected language pairs  
-- `wmt24_filtered_100.jsonl` — balanced wmt24_filtered_100 with 100 examples per target language  
+- `wmt24_filtered_5.jsonl` — balanced subset with 5 examples per target language for very easy testing
+- `wmt24_filtered_100.jsonl` — balanced subset with 100 examples per target language  
 
 ### Example command
-You can create a wmt24_filtered_100 yourself using the following command (specify `--n`):
+You can create a subset yourself using the following command (specify `--n`):
 ```bash
 python data/filter.py --mode balanced --n 100
 ```
