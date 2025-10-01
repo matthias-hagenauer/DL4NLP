@@ -244,7 +244,6 @@ def main():
             overall_bleu = float(bleu_corpus(preds_v, refs_v).get("bleu", 0.0))
 
     # 5) Save per-row data
-    # TODO: Add specific model path to output
     pred_path = os.path.join(args.outdir, "predictions.jsonl")
     csv_path  = os.path.join(args.outdir, "rows.csv")
 
@@ -265,7 +264,7 @@ def main():
         })
     dump_csv(csv_path, rows_for_csv)
 
-    # 6) Summaries
+    # 6) Summaries TODO: Add std to summary
     def key_by_bin(r): return r.get("esa_bin", "UNBINNED")
     def key_by_lp(r): return r.get("langpair", "unknown")
     def key_by_lp_bin(r): return key_by_lp(r) + " | " + key_by_bin(r)
