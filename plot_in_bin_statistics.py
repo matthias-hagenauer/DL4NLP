@@ -2,9 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Plot in-bin statistics for each model (enhanced).
+Plot in-bin statistics for each model.
 
-What’s new:
 - Enforces three difficulty bins and renames them to: easy / medium / hard.
 - Adds Seaborn-based visuals:
   * Smoothed (LOWESS) metric vs difficulty scatter (per-sentence)
@@ -358,24 +357,169 @@ def plot_one_model(stat_dir: Path):
     print(f"Wrote plots to: {stat_dir}")
     print(f" - {report_pdf.name} (combined PDF)")
 
+# ---------------------- Cross-model grouped plots from summary.json ----------------------
+
+def _common_base_dir(stat_dirs):
+    """Find a sensible common parent to store combined plots."""
+    paths = [Path(d).resolve() for d in stat_dirs]
+    if not paths:
+        return Path("results").resolve()
+    # Compute common prefix of all stat_dir paths, then go one level up if the last part is 'in_bin_statistics'
+    common_parts = list(paths[0].parts)
+    for p in paths[1:]:
+        # trim to shared prefix
+        i = 0
+        while i < min(len(common_parts), len(p.parts)) and common_parts[i] == p.parts[i]:
+            i += 1
+        common_parts = common_parts[:i]
+    common = Path(*common_parts)
+    # If the common path is the stats folder itself, step up to the model parent
+    if common.name == "in_bin_statistics":
+        return common.parent
+    return common if common.parts else Path("results").resolve()
+
+
+def _model_order_key(name: str) -> int:
+    """
+    Order models as: TM, TM_2bit, TM_3bit, TM_4bit, TM_5bit, TM_6bit, TM_8bit (or similar).
+    """
+    name_l = name.lower()
+    if name_l in {"tm", "towermistral"}:
+        return 0
+    m = re.search(r"(\d+)bit", name_l)
+    if m:
+        val = int(m.group(1))
+        order_map = {2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 8: 6}
+        return order_map.get(val, 99)
+    return 98  # unknowns near end
+
+
+def collect_metric_by_bin(stat_dirs, metric_name: str) -> pd.DataFrame:
+    """
+    Read summary.json from each model directory.
+    Return DataFrame with columns: model, langpair, bin_label (easy/medium/hard), <metric_name>_mean
+    Expects: summary.json -> metrics -> <metric_name> -> by_langpair_bin -> "en-de | (a-b]" : {count, mean}
+    """
+    rows = []
+    for sd in stat_dirs:
+        model_dir = Path(sd).parent
+        model_name = model_dir.name
+        summary_path = model_dir / "summary.json"
+        if not summary_path.exists():
+            continue
+        try:
+            data = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        metrics_blob = (data.get("metrics") or {}).get(metric_name, {})
+        by_lp_bin = metrics_blob.get("by_langpair_bin", {})
+        if not by_lp_bin:
+            # fall back to top-level (older format), e.g., data.get(metric_name, {})
+            by_lp_bin = (data.get(metric_name, {}) or {}).get("by_langpair_bin", {})
+
+        for key, obj in by_lp_bin.items():
+            if " | " not in key:
+                continue
+            lp, bin_str = key.split(" | ", 1)
+            label = BIN_LABELS_MAP.get(bin_str)
+            if not label:
+                continue  # skip UNBINNED/unknown bins
+            mean = obj.get("mean", None)
+            if mean is None:
+                continue
+            rows.append({
+                "model": model_name,
+                "langpair": lp,
+                "bin_label": label,
+                f"{metric_name}_mean": float(mean),
+            })
+
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+def plot_cross_model_metric(df_all: pd.DataFrame, metric_name: str, out_base: Path):
+    """
+    Make one grouped bar plot per language pair for a given metric.
+    Saves PNGs under: <out_base>/in_bin_statistics_across_models/<metric_name>/
+    """
+    if df_all.empty:
+        print(f"[cross-model] No {metric_name.upper()}-by-bin data found.")
+        return
+
+    out_dir = out_base / "in_bin_statistics_across_models" / metric_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # enforce orders
+    df_all = df_all.copy()
+    df_all["bin_label"] = pd.Categorical(df_all["bin_label"], categories=BIN_ORDER, ordered=True)
+    models_sorted = sorted(df_all["model"].unique(), key=_model_order_key)
+    df_all["model"] = pd.Categorical(df_all["model"], categories=models_sorted, ordered=True)
+
+    # one figure per language pair
+    for lp in sorted(df_all["langpair"].unique()):
+        sub = df_all[df_all["langpair"] == lp].sort_values(["bin_label", "model"])
+        plt.figure(figsize=(10, 5))
+        ycol = f"{metric_name}_mean"
+        if _HAVE_SEABORN:
+            sns.barplot(data=sub, x="bin_label", y=ycol, hue="model")
+        else:
+            # Fallback: manual grouped bars
+            bins = BIN_ORDER
+            n_bins = len(bins)
+            n_models = len(models_sorted)
+            width = 0.8 / max(1, n_models)
+            for mi, mname in enumerate(models_sorted):
+                vals = [sub[(sub["bin_label"] == b) & (sub["model"] == mname)][ycol].mean() for b in bins]
+                x = [i + mi * width for i in range(n_bins)]
+                plt.bar(x, vals, width=width, label=mname)
+            centers = [i + (n_models - 1) * width / 2 for i in range(n_bins)]
+            plt.xticks(centers, bins)
+
+        plt.title(f"{metric_name.upper()} mean by bin — {lp}")
+        plt.xlabel("bin"); plt.ylabel(f"{metric_name.upper()} mean")
+        plt.legend(title="model", ncol=2, fontsize=8)
+        plt.tight_layout()
+        fp = out_dir / f"{metric_name}_by_bin_{lp.replace('-', '_')}.png"
+        plt.savefig(fp, dpi=200); plt.close()
+
+    print(f"[cross-model] Wrote grouped {metric_name.upper()} plots to: {out_dir}")
+
+
+def run_cross_model_plots(stat_dirs):
+    """
+    Collect & plot for the desired metrics.
+    Change the list below if you want more/less metrics.
+    """
+    out_base = _common_base_dir(stat_dirs)
+    for metric in ["comet", "chrf", "bleu"]:
+        df = collect_metric_by_bin(stat_dirs, metric)
+        plot_cross_model_metric(df, metric, out_base)
+
+
 # ---------------------- main ----------------------
 def main():
-    ap = argparse.ArgumentParser(description="Plot in-bin statistics per model; saves PNGs + one PDF per model.")
+    ap = argparse.ArgumentParser(description="Plot in-bin statistics per model; plus cross-model COMET-by-bin plots.")
     ap.add_argument("inputs", nargs="+", help="Parent results folder(s) or in_bin_statistics folder(s).")
     args = ap.parse_args()
 
-    targets = discover_stat_dirs(args.inputs)
-    if not targets:
+    stat_dirs = discover_stat_dirs(args.inputs)
+    if not stat_dirs:
         print("No in_bin_statistics folders with CSVs found.")
         return
 
-    # A tasteful default Seaborn style if present
     if _HAVE_SEABORN:
         sns.set_context("talk")
         sns.set_style("whitegrid")
 
-    for stat_dir in targets:
+    # Per-model plots
+    for stat_dir in stat_dirs:
         plot_one_model(stat_dir)
+
+    # Cross-model COMET-by-bin plots (read summary.json from each model folder)
+    # Cross-model plots from summary.json (COMET, CHRF, BLEU)
+    run_cross_model_plots(stat_dirs)
+
 
 if __name__ == "__main__":
     main()
