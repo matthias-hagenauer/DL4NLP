@@ -159,3 +159,56 @@ python main.py --model_id TM_6bit --data data/wmt24_filtered_100.jsonl --n_gpu_l
 # 8-bit quantized GGUF
 python main.py --model_id TM_8bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
 ```
+
+# Bin-wise Translation Difficulty Analysis
+
+This script analyzes machine translation predictions **per difficulty bin** using your existing `predictions.jsonl` files (one per model). It computes in-bin statistics (lengths, punctuation, sentence counts), aggregates metric means (e.g., chrF, COMET), and reports correlations between `difficulty_score` and lengths/metrics. Results are written **next to each model’s `predictions.jsonl`**.
+
+---
+
+## What it does
+
+For **each** model folder, it will produce:
+
+- `bin_summary.csv` — one row per `difficulty_bin`, including:
+  - `count`, mean/median/std of `difficulty_score`
+  - mean/std tokens & chars for `src`, `ref`, `pred`
+  - punctuation density and sentence-count means
+  - `exact_match_rate` (pred == ref)
+  - mean/std for any metrics present in `metrics` (e.g., `chrf_mean`, `comet_seg_mean`)
+- `metric_correlations.csv` — Pearson correlations within the bin between `difficulty_score` and:
+  - token counts (`src/ref/pred`)
+  - each metric in `metrics` (e.g., `chrf`, `comet_seg`)
+- `langpair_breakdown.csv` — counts per `difficulty_bin × langpair`
+
+## How to run
+
+```bash
+
+# Run for all models at once (point to the parent folder):
+python analyze_bin.py results/
+
+Or run for specific files:
+python analyze_bin.py \
+  results/TM/predictions.jsonl \
+  results/TM_2bit/predictions.jsonl \
+  results/TM_3bit/predictions.jsonl \
+  results/TM_4bit/predictions.jsonl \
+  results/TM_5bit/predictions.jsonl \
+  results/TM_6bit/predictions.jsonl \
+  results/TM_8bit/predictions.jsonl
+```
+
+## Visualization
+
+To visualize the bin-wise statistics, you first need to install the required plotting libraries:
+
+```bash
+pip install seaborn altair altair_saver vl-convert-python statsmodels
+```
+
+To Run:
+
+```bash
+python plot_in_bin_statistics.py results/
+```
