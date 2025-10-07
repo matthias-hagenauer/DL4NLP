@@ -10,7 +10,8 @@ I save it as a pkl and load it here.
 # Load your dataframe
 df = pd.read_pickle("results.pkl")
 
-# Filter for English → German or Dutch translations only
+# Filter for English → German or Dutch translations only 
+# ALSO I am filtering out the 2bit and 4bit models here! 
 df_en_de = df[(df['src_lang'] == 'en') & (df['tgt_lang'] == 'nl') & (df['model'] != 'TM_2bit') & (df['model'] != 'TM_4bit')]
 
 # Pivot so we can compare models easily
