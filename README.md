@@ -27,7 +27,7 @@ These resources provide background on the motivation, methods, and trade-offs in
 
 ## Dataset
 
-We use the [WMT24++ dataset](https://huggingface.co/datasets/google/wmt24pp) as our primary source of machine translation data.  
+We use four language pairs of the [WMT24++ dataset](https://huggingface.co/datasets/google/wmt24pp) as our primary source of machine translation data.  
 To control for translation difficulty, we process it with [translation difficulty estimation](https://github.com/zouharvi/translation-difficulty-estimation) ([paper](https://arxiv.org/abs/2508.10175)).
 
 ### Language pairs
@@ -37,9 +37,34 @@ We focus on the following pairs from WMT24++:
 - **nl-zh**
 - **en-es**
 
+To obtain the augmented versions of the datasets that can be found in ```DifficultyEstimation/data``` the following code is used:
+### Difficulty env setup:
+```bash
+cd DifficultyEstimation
+conda create -y -n difficulty python=3.10
+source activate difficulty
+python -m pip install --upgrade pip
+
+git clone git@github.com:prosho-97/guardians-mt-eval.git
+cd guardians-mt-eval
+pip install -e .
+```
+
+### Running the difficulty estimation:
+```bash
+cd DifficultyEstimation
+python add_difficulty_estimation.py --input ../data/raw_data/en-de_DE.jsonl --output ../data/difficulty_augmented_data/en-de.jsonl
+
+python add_difficulty_estimation.py --input ../data/raw_data/en-es_MX.jsonl --output ../data/difficulty_augmented_data/en-es.jsonl
+
+python add_difficulty_estimation.py --input ../data/raw_data/en-nl_NL.jsonl --output ../data/difficulty_augmented_data/en-nl.jsonl
+
+python add_difficulty_estimation.py --input ../data/raw_data/en-zh_CN.jsonl --output ../data/difficulty_augmented_data/en-zh.jsonl
+```
+
 ### Processed datasets
-We generate several JSONL datasets:
-- `wmt24_estimated.jsonl` — difficulty-estimated data for selected language pairs  
+We create several JSONL datasets:
+- `wmt24_estimated.jsonl` — concatenated difficulty-estimated data for the selected language pairs. (This is made by concatenating the augmented pairwise datasets by hand)  
 - `wmt24_estimated_normalized.jsonl` - normalized difficulty scores ([0-1]) using minmax normalization 
 - `wmt24_filtered_5.jsonl` — balanced subset with 5 examples per target language for very easy testing
 - `wmt24_filtered_100.jsonl` — balanced subset with 100 examples per target language  
