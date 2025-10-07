@@ -95,32 +95,51 @@ class GGUFModel:
         # No tokenizer object here; we pass None to _build_prompt
         self.tokenizer = None
 
+        # Detect whether the model has a chat template
+        self.has_chat = hasattr(self.llm, "chat_format") and (self.llm.chat_format is not None)
+
+
     def translate_batch(self, items, **gen_kwargs):
+        """Generate translations for a batch of items."""
         max_new_tokens = gen_kwargs.get("max_new_tokens", 256)
         do_sample      = gen_kwargs.get("do_sample", False)
         temperature    = (gen_kwargs.get("temperature", 0.7) if do_sample else 0.0)
 
         preds = []
         for it in items:
-            prompt = _build_prompt(None, it.get("src",""),
-                                   it.get("src_lang","en"),
-                                   it.get("tgt_lang","en"))
+            content = _build_prompt(None, it.get("src",""), it.get("src_lang","en"), it.get("tgt_lang","en"))
 
-            # plain completion interface is robust for instruct models
-            out = self.llm.create_completion(
-                prompt=prompt,
-                max_tokens=max_new_tokens,
-                temperature=temperature,
-                stop=["\n\n", "</s>", "<|endoftext|>", "Assistant:"]
-            )
-            text = out["choices"][0]["text"]
-            # light cleanup like the HF path does
+            if self.has_chat:
+                # Use the model's chat template (recommended for TowerMistral)
+                out = self.llm.create_chat_completion(
+                    messages=[{"role": "user", "content": content}],
+                    temperature=0.0,
+                    max_tokens=max_new_tokens,
+                )
+                text = out["choices"][0]["message"]["content"]
+            else:
+                # Fallback: completion mode with stronger stops
+                out = self.llm.create_completion(
+                    prompt=content,
+                    max_tokens=max_new_tokens,
+                    temperature=temperature,
+                    stop=[
+                        "<|im_end|>",
+                        "\nEnglish:", "English:",
+                        "\nGerman:",  "German:",
+                        "\n\n", "</s>", "<|endoftext|>", "Assistant:",
+                    ],
+                )
+                text = out["choices"][0]["text"]
+
+            # Clean up output
             target_label = _lang_name(it.get("tgt_lang",""))
             label_str = f"{target_label}:"
             if label_str in text:
                 text = text.split(label_str, 1)[-1]
             text = re.split(r"(?:</s>|<\|endoftext\|>|Assistant:)", text)[0]
             preds.append(text.strip().strip('"').strip("“”").strip())
+
         return preds
 # ---------------------------------------------------------------
 
