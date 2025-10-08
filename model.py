@@ -4,7 +4,7 @@ import os
 
 # Baseline HF models
 DEFAULT_MODEL_ID = "Unbabel/TowerInstruct-Mistral-7B-v0.2"
-GEMMA3_MODEL_ID  = "google/gemma-3-12b-it"
+GEMMA3_MODEL_ID  = "google/gemma-3-4b-it"
 
 # Local + HF GGUF presets
 GGUF_DEFAULTS = {
@@ -27,19 +27,19 @@ GGUF_DEFAULTS = {
 
     # --- Gemma 3 12B Instruct (G3) ---
     "G3_2bit": (
-        "models/gguf/2bit/gemma-3-12b-it-Q2_K.gguf",
-        "tensorblock/gemma-3-12b-it-GGUF",
-        "gemma-3-12b-it-Q2_K.gguf",
+        "models/gguf/2bit/gemma-3-4b-it-Q2_K.gguf",
+        "tensorblock/gemma-3-4b-it-GGUF",
+        "gemma-3-4b-it-Q2_K.gguf",
     ),
     "G3_4bit": (
-        "models/gguf/4bit/gemma-3-12b-it-Q4_K_M.gguf",
-        "tensorblock/gemma-3-12b-it-GGUF",
-        "gemma-3-12b-it-Q4_K_M.gguf",
+        "models/gguf/4bit/gemma-3-4b-it-Q4_K_M.gguf",
+        "tensorblock/gemma-3-4b-it-GGUF",
+        "gemma-3-4b-it-Q4_K_M.gguf",
     ),
     "G3_8bit": (
-        "models/gguf/8bit/gemma-3-12b-it-Q8_0.gguf",
-        "tensorblock/gemma-3-12b-it-GGUF",
-        "gemma-3-12b-it-Q8_0.gguf",
+        "models/gguf/8bit/gemma-3-4b-it-Q8_0.gguf",
+        "tensorblock/gemma-3-4b-it-GGUF",
+        "gemma-3-4b-it-Q8_0.gguf",
     ),
 }
 
@@ -255,7 +255,7 @@ def build_model(model_id=None, device_map="auto",
     """
     Single entry point:
       - model_id == "TM"                 -> HF baseline (Unbabel/TowerInstruct-Mistral-7B-v0.2)
-      - model_id == "G3"                 -> HF baseline (google/gemma-3-12b-it)
+      - model_id == "G3"                 -> HF baseline (google/gemma-3-4b-it)
       - model_id in {"TM_2bit","TM_4bit","TM_8bit","G3_2bit","G3_4bit","G3_8bit"}
                                          -> GGUF quant under models/gguf/<bit>/..., fallback to HF repo if missing
       - otherwise                        -> treat as Hugging Face model id
