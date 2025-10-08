@@ -2,27 +2,45 @@ import re
 from transformers import pipeline
 import os
 
+# Baseline HF models
 DEFAULT_MODEL_ID = "Unbabel/TowerInstruct-Mistral-7B-v0.2"
+GEMMA3_MODEL_ID  = "google/gemma-3-12b-it"
 
+# Local + HF GGUF presets
 GGUF_DEFAULTS = {
-    "TM_2bit": ("models/gguf/2bit/TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf",
-                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
-                "TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf"),
-    "TM_3bit": ("models/gguf/3bit/TowerInstruct-Mistral-7B-v0.2-Q3_K_L.gguf",
-                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
-                "TowerInstruct-Mistral-7B-v0.2-Q3_K_L.gguf"),
-    "TM_4bit": ("models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf",
-                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
-                "TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf"),
-    "TM_5bit": ("models/gguf/5bit/TowerInstruct-Mistral-7B-v0.2-Q5_K_M.gguf",
-                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
-                "TowerInstruct-Mistral-7B-v0.2-Q5_K_M.gguf"),
-    "TM_6bit": ("models/gguf/6bit/TowerInstruct-Mistral-7B-v0.2-Q6_K.gguf",
-                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
-                "TowerInstruct-Mistral-7B-v0.2-Q6_K.gguf"),
-    "TM_8bit": ("models/gguf/8bit/TowerInstruct-Mistral-7B-v0.2-Q8_0.gguf",
-                "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
-                "TowerInstruct-Mistral-7B-v0.2-Q8_0.gguf"),
+    # --- TowerInstruct-Mistral (TM) ---
+    "TM_2bit": (
+        "models/gguf/2bit/TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf",
+        "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+        "TowerInstruct-Mistral-7B-v0.2-Q2_K.gguf",
+    ),
+    "TM_4bit": (
+        "models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf",
+        "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+        "TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf",
+    ),
+    "TM_8bit": (
+        "models/gguf/8bit/TowerInstruct-Mistral-7B-v0.2-Q8_0.gguf",
+        "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF",
+        "TowerInstruct-Mistral-7B-v0.2-Q8_0.gguf",
+    ),
+
+    # --- Gemma 3 12B Instruct (G3) ---
+    "G3_2bit": (
+        "models/gguf/2bit/gemma-3-12b-it-Q2_K.gguf",
+        "tensorblock/gemma-3-12b-it-GGUF",
+        "gemma-3-12b-it-Q2_K.gguf",
+    ),
+    "G3_4bit": (
+        "models/gguf/4bit/gemma-3-12b-it-Q4_K_M.gguf",
+        "tensorblock/gemma-3-12b-it-GGUF",
+        "gemma-3-12b-it-Q4_K_M.gguf",
+    ),
+    "G3_8bit": (
+        "models/gguf/8bit/gemma-3-12b-it-Q8_0.gguf",
+        "tensorblock/gemma-3-12b-it-GGUF",
+        "gemma-3-12b-it-Q8_0.gguf",
+    ),
 }
 
 LANG_NAME = {
@@ -110,7 +128,7 @@ class GGUFModel:
             content = _build_prompt(None, it.get("src",""), it.get("src_lang","en"), it.get("tgt_lang","en"))
 
             if self.has_chat:
-                # Use the model's chat template (recommended for TowerMistral)
+                # Use the model's chat template (recommended when available)
                 out = self.llm.create_chat_completion(
                     messages=[{"role": "user", "content": content}],
                     temperature=0.0,
@@ -150,11 +168,19 @@ class HFPipelineModel:
         self.model_id = model_id or DEFAULT_MODEL_ID
         self.device_map = device_map
 
-        self.pipe = pipeline(
-            "text-generation",
-            model=self.model_id,
+        token = os.getenv("HUGGINGFACE_HUB_TOKEN") or os.getenv("HF_TOKEN")
+
+        pipe_kwargs = dict(
+            task="text-generation",
+            model=self.model_id, 
             device_map=self.device_map,
         )
+
+        # Only pass token if we actually have one.
+        if token:
+            pipe_kwargs["token"] = token
+
+        self.pipe = pipeline(**pipe_kwargs)
         self.tokenizer = self.pipe.tokenizer
         self._eos_ids = _collect_eos_ids(self.tokenizer)
         # Use eos as pad to silence warnings/ensure batching works
@@ -229,15 +255,19 @@ def build_model(model_id=None, device_map="auto",
     """
     Single entry point:
       - model_id == "TM"                 -> HF baseline (Unbabel/TowerInstruct-Mistral-7B-v0.2)
-      - model_id in {"TM_2bit", ...}     -> GGUF quant under models/gguf/<bit>/..., fallback to HF repo if missing
+      - model_id == "G3"                 -> HF baseline (google/gemma-3-12b-it)
+      - model_id in {"TM_2bit","TM_4bit","TM_8bit","G3_2bit","G3_4bit","G3_8bit"}
+                                         -> GGUF quant under models/gguf/<bit>/..., fallback to HF repo if missing
       - otherwise                        -> treat as Hugging Face model id
     Optional overrides: gguf_path, gguf_repo, gguf_file
     """
     mid = model_id or "TM"
 
-    # Friendly HF baseline
+    # Friendly HF baselines
     if mid == "TM":
         return HFPipelineModel(model_id=DEFAULT_MODEL_ID, device_map=device_map)
+    if mid == "G3":
+        return HFPipelineModel(model_id=GEMMA3_MODEL_ID, device_map=device_map)
 
     # Friendly GGUF variants
     if mid in GGUF_DEFAULTS:

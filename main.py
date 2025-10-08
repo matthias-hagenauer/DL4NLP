@@ -4,7 +4,7 @@ import json
 import os
 
 from data import load_jsonl_pairs
-from model_test import build_model
+from model import build_model
 from eval import chrf_segment_scores, bleu_corpus, comet22_scores
 
 from binning import parse_bins, assign_bin, coerce_esa, quantile_bin_tuples, balance_bins
@@ -143,7 +143,7 @@ def main():
                     default="interval",
                     help="interval*: equal-sized groups via data-driven fallback; quantile*: terciles. *_balanced marks overflow items as UNBINNED.")
     # COMET config
-    ap.add_argument("--eval_metrics", nargs="+", choices=["chrf", "bleu", "comet"], default=["chrf"],
+    ap.add_argument("--eval_metrics", nargs="+", choices=["chrf", "bleu", "comet"], default=["chrf, comet"],
                     help="Subset of metrics to compute.")
     ap.add_argument("--comet_gpus", type=int, default=1)
     ap.add_argument("--comet_batch", type=int, default=8)

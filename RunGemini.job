@@ -1,11 +1,11 @@
 #!/bin/bash
 
-#SBATCH --partition=gpu_mig
+#SBATCH --partition=gpu_a100
 #SBATCH --gpus=1
 #SBATCH --job-name=RunGemini
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=9
-#SBATCH --time=8:00:00
+#SBATCH --time=0:20:00
 #SBATCH --output=output/slurm_output_%A.out
 
 module purge
@@ -26,23 +26,23 @@ mkdir -p "$HF_HOME" "$HF_HUB_CACHE" "$HF_ASSETS_CACHE"
 # Baseline HuggingFace Gemma-3
 srun python main.py \
   --model_id G3 \
-  --data data/wmt24_filtered_5.jsonl
+  --data data/wmt24_estimated_normalized.jsonl
 
-# # 2-bit quantized GGUF
-# srun python main.py \
-#   --model_id G3_2bit \
-#   --data data/wmt24_filtered_100.jsonl \
-#   --n_gpu_layers 40
+# 2-bit quantized GGUF
+srun python main.py \
+  --model_id G3_2bit \
+  --data data/wmt24_estimated_normalized.jsonl \
+  --n_gpu_layers 40
 
-# # 4-bit quantized GGUF (with explicit local override)
-# srun python main.py \
-#   --model_id G3_4bit \
-#   --gguf_path models/gguf/4bit/gemma-3-12b-it-Q4_K_M.gguf \
-#   --data data/wmt24_filtered_100.jsonl \
-#   --n_gpu_layers 40
+# 4-bit quantized GGUF (with explicit local override)
+srun python main.py \
+  --model_id G3_4bit \
+  --gguf_path models/gguf/4bit/gemma-3-12b-it-Q4_K_M.gguf \
+  --data data/wmt24_estimated_normalized.jsonl \
+  --n_gpu_layers 40
 
-# # 8-bit quantized GGUF
-# srun python main.py \
-#   --model_id G3_8bit \
-#   --data data/wmt24_filtered_100.jsonl \
-#   --n_gpu_layers 40
+# 8-bit quantized GGUF
+srun python main.py \
+  --model_id G3_8bit \
+  --data data/wmt24_estimated_normalized.jsonl \
+  --n_gpu_layers 40
