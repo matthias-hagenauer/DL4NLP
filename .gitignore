@@ -11,3 +11,5 @@ slurm_*.out
 models/
 models/*
 /models/
+
+.env

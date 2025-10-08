@@ -168,12 +168,19 @@ class HFPipelineModel:
         self.model_id = model_id or DEFAULT_MODEL_ID
         self.device_map = device_map
 
-        self.pipe = pipeline(
-            "text-generation",
-            model=self.model_id,
-            token=True,
+        token = os.getenv("HUGGINGFACE_HUB_TOKEN") or os.getenv("HF_TOKEN")
+
+        pipe_kwargs = dict(
+            task="text-generation",
+            model=self.model_id, 
             device_map=self.device_map,
         )
+
+        # Only pass token if we actually have one.
+        if token:
+            pipe_kwargs["token"] = token
+
+        self.pipe = pipeline(**pipe_kwargs)
         self.tokenizer = self.pipe.tokenizer
         self._eos_ids = _collect_eos_ids(self.tokenizer)
         # Use eos as pad to silence warnings/ensure batching works
