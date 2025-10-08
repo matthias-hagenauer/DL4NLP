@@ -144,19 +144,39 @@ conda deactivate && conda activate nlp
 
 ## Quickstart
 
-### Download quantized Tower Mistral model (GGUF format)
+First dwnload quantized Tower Mistral model (GGUF format):
 
 ```bash
 chmod +x get_tm_gguf.sh
 bash get_tm_gguf.sh
 ```
 
-### Download quantized Gemini-3 model (GGUF format)
+Also downlaod quantized Gemini-3 model (GGUF format):
 
 ```bash
 chmod +x get_gemini_gguf.sh
 bash get_gemini_gguf.sh
 ```
+
+### Access & Setup for Gemma-3 (Hugging Face)
+
+`google/gemma-3-12b-it` is a gated model, so you must authenticate before first use.
+1. Accept access terms
+Visit https://huggingface.co/google/gemma-3-12b-it and click “Access model” / “Accept license”.
+
+2. Create a read token
+Go to Account → Acces tokens → New token → select read scope.
+
+3. Create a `.env` file, add the following:
+```bash
+HUGGINGFACE_HUB_TOKEN=hf_xxx
+HF_HOME=$HOME/.cache/huggingface
+HF_HUB_CACHE=$HF_HOME/hub
+HF_ASSETS_CACHE=$HF_HOME/assets
+```
+Then run `mkdir -p "$HF_HOME" "$HF_HUB_CACHE" "$HF_ASSETS_CACHE"`
+
+4. Load it before running or in your jobfile: `set -a; source .env; set +a`
 
 ### Run examples — TM and Gemma-3 baselines + quantized versions
 
@@ -227,3 +247,4 @@ python main.py \
   --n_gpu_layers 40
 ```
 
+---

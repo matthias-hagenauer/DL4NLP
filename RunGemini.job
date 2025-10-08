@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --partition=gpu_a100
+#SBATCH --partition=gpu_mig
 #SBATCH --gpus=1
 #SBATCH --job-name=RunGemini
 #SBATCH --ntasks=1
@@ -26,7 +26,7 @@ mkdir -p "$HF_HOME" "$HF_HUB_CACHE" "$HF_ASSETS_CACHE"
 # Baseline HuggingFace Gemma-3
 srun python main.py \
   --model_id G3 \
-  --data data/wmt24_filtered_100.jsonl
+  --data data/wmt24_filtered_5.jsonl
 
 # # 2-bit quantized GGUF
 # srun python main.py \
