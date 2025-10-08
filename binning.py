@@ -42,11 +42,11 @@ def assign_bin(value: Optional[float], bins: Sequence[Tuple[float, float]]) -> s
 
     lo0, hi0 = bins[0]
     if value >= lo0 and value <= hi0:
-        return f"({lo0}-{hi0}]"
+        return f"({float(f'{lo0:.3f}')} - {float(f'{hi0:.3f}')}]"
 
     for lo, hi in bins[1:]:
         if value > lo and value <= hi:
-            return f"({lo}-{hi}]"
+            return f"({float(f'{lo:.3f}')} - {float(f'{hi:.3f}')}]"
 
     return "UNBINNED"
 
