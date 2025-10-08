@@ -21,7 +21,7 @@ cd "$HOME/dl4nlp/DL4NLP" || { echo "Bad cd"; exit 1; }
 # srun python main.py --model_id TM --data data/wmt24_estimated_normalized.jsonl --bins quantile_balanced --eval_metrics chrf bleu comet
 
 # # 2-bit quantized GGUF (local if available, else HF)
-srun python main.py --model_id TM_2bit --data data/wmt24_estimated_normalized.jsonl --n_gpu_layers 40 --bins quantile_balanced --eval_metrics chrf bleu comet
+# srun python main.py --model_id TM_2bit --data data/wmt24_estimated_normalized.jsonl --n_gpu_layers 40 --bins quantile_balanced --eval_metrics chrf bleu comet
 
 # # 3-bit quantized GGUF
 # srun python main.py --model_id TM_3bit --data data/wmt24_estimated_normalized.jsonl --n_gpu_layers 40 --bins quantile_balanced --eval_metrics chrf bleu comet
@@ -37,3 +37,6 @@ srun python main.py --model_id TM_2bit --data data/wmt24_estimated_normalized.js
 
 # # 8-bit quantized GGUF
 # srun python main.py --model_id TM_8bit --data data/wmt24_estimated_normalized.jsonl --n_gpu_layers 40 --bins quantile_balanced --eval_metrics chrf bleu comet
+
+# python analyze_bin.py results/
+python plot_in_bin_statistics.py

@@ -69,7 +69,7 @@ def _collect_eos_ids(tokenizer):
     eos_ids = list(dict.fromkeys(eos_ids))
     return eos_ids
 
-# ---------------- NEW: GGUF backend (llama.cpp) ----------------
+
 class GGUFModel:
     """
     Loads a local .gguf file or pulls from Hugging Face via llama.cpp.
@@ -141,7 +141,7 @@ class GGUFModel:
             preds.append(text.strip().strip('"').strip("“”").strip())
 
         return preds
-# ---------------------------------------------------------------
+
 
 class HFPipelineModel:
     """Simple HF pipeline wrapper (no quantization)."""
