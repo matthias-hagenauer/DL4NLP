@@ -171,6 +171,7 @@ class HFPipelineModel:
         self.pipe = pipeline(
             "text-generation",
             model=self.model_id,
+            token=True,
             device_map=self.device_map,
         )
         self.tokenizer = self.pipe.tokenizer
