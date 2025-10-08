@@ -19,6 +19,7 @@ You are free to leverage the **ALMA training data** for any purpose, including:
 ## Related Work
 - [A Survey on Model Compression for Large Language Models](https://arxiv.org/abs/2307.03172)  
 - [Tower: An Open Multilingual Large Language Model for Translation-Related Tasks](https://arxiv.org/abs/2402.17733)
+- [Gemma 3 Technical Report](https://arxiv.org/abs/2503.19786)
 - [Estimating Machine Translation Difficulty](https://arxiv.org/abs/2508.10175)
 
 These resources provide background on the motivation, methods, and trade-offs in compressing LLMs.
@@ -115,6 +116,9 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 # Install project requirements (Transformers baseline, metrics, etc.)
 pip install -r requirements.txt
 
+# Insrall COMET
+pip install "unbabel-comet>=2.2.6"
+
 # Extra helpers some models/metrics need
 pip install sentencepiece protobuf safetensors
 
@@ -136,12 +140,6 @@ bash setup_llamacpp_cuda12.sh
 conda deactivate && conda activate nlp
 ```
 
-### Optional: COMET metric (for --eval_metrics comet)
-
-```bash
-pip install "unbabel-comet>=2.2.6"
-```
-
 ---
 
 ## Quickstart
@@ -153,87 +151,79 @@ chmod +x get_tm_gguf.sh
 bash get_tm_gguf.sh
 ```
 
-### Run examples TM baseline + quantized versions
+### Download quantized Gemini-3 model (GGUF format)
+
+```bash
+chmod +x get_gemini_gguf.sh
+bash get_gemini_gguf.sh
+```
+
+### Run examples — TM and Gemma-3 baselines + quantized versions
 
 You can run models like this below.
 > **Note:** The examples here use the small demo file `data/wmt24_filtered_100.jsonl`.  
 > For the full dataset, replace `--data data/wmt24_filtered_100.jsonl` with:  
 > `--data data/wmt24_estimated.jsonl`
 
-Set eval metrics like `--eval_metrics chrf bleu comet`.
-
-```bash
-# Baseline HuggingFace TowerMistral
-python main.py --model_id TM --data data/wmt24_filtered_100.jsonl
-
-# 2-bit quantized GGUF (local if available, else HF)
-python main.py --model_id TM_2bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
-
-# 3-bit quantized GGUF
-python main.py --model_id TM_3bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
-
-# 4-bit quantized GGUF (with explicit local override)
-python main.py --model_id TM_4bit --gguf_path models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
-
-# 5-bit quantized GGUF
-python main.py --model_id TM_5bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
-
-# 6-bit quantized GGUF
-python main.py --model_id TM_6bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
-
-# 8-bit quantized GGUF
-python main.py --model_id TM_8bit --data data/wmt24_filtered_100.jsonl --n_gpu_layers 40
-```
-
-# Bin-wise Translation Difficulty Analysis
-
-This script analyzes machine translation predictions **per difficulty bin** using your existing `predictions.jsonl` files (one per model). It computes in-bin statistics (lengths, punctuation, sentence counts), aggregates metric means (e.g., chrF, COMET), and reports correlations between `difficulty_score` and lengths/metrics. Results are written **next to each model’s `predictions.jsonl`**.
+Set eval metrics like `--eval_metrics chrf comet`.
 
 ---
 
-## What it does
-
-For **each** model folder, it will produce:
-
-- `bin_summary.csv` — one row per `difficulty_bin`, including:
-  - `count`, mean/median/std of `difficulty_score`
-  - mean/std tokens & chars for `src`, `ref`, `pred`
-  - punctuation density and sentence-count means
-  - `exact_match_rate` (pred == ref)
-  - mean/std for any metrics present in `metrics` (e.g., `chrf_mean`, `comet_seg_mean`)
-- `metric_correlations.csv` — Pearson correlations within the bin between `difficulty_score` and:
-  - token counts (`src/ref/pred`)
-  - each metric in `metrics` (e.g., `chrf`, `comet_seg`)
-- `langpair_breakdown.csv` — counts per `difficulty_bin × langpair`
-
-## How to run
+#### TowerMistral
 
 ```bash
+# Baseline HuggingFace TowerMistral
+python main.py \
+  --model_id TM \
+  --data data/wmt24_filtered_100.jsonl
 
-# Run for all models at once (point to the parent folder):
-python analyze_bin.py results/
+# 2-bit quantized GGUF (local if available, else HF)
+python main.py \
+  --model_id TM_2bit 
+  --data data/wmt24_filtered_100.jsonl \
+  --n_gpu_layers 40
 
-Or run for specific files:
-python analyze_bin.py \
-  results/TM/predictions.jsonl \
-  results/TM_2bit/predictions.jsonl \
-  results/TM_3bit/predictions.jsonl \
-  results/TM_4bit/predictions.jsonl \
-  results/TM_5bit/predictions.jsonl \
-  results/TM_6bit/predictions.jsonl \
-  results/TM_8bit/predictions.jsonl
+# 4-bit quantized GGUF (with explicit local override)
+python main.py \
+  --model_id TM_4bit \
+  --gguf_path models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf \
+  --data data/wmt24_filtered_100.jsonl \
+  --n_gpu_layers 40
+
+# 8-bit quantized GGUF
+python main.py \
+  --model_id TM_8bit \
+  --data data/wmt24_filtered_100.jsonl \
+  --n_gpu_layers 40
 ```
 
-## Visualization
+---
 
-To visualize the bin-wise statistics, you first need to install the required plotting libraries:
+#### Gemini-3 12B Instruct
 
 ```bash
-pip install seaborn altair altair_saver vl-convert-python statsmodels
+# Baseline HuggingFace Gemma-3
+python main.py \
+  --model_id G3 \
+  --data data/wmt24_filtered_100.jsonl
+
+# 2-bit quantized GGUF
+python main.py \
+  --model_id G3_2bit \
+  --data data/wmt24_filtered_100.jsonl \
+  --n_gpu_layers 40
+
+# 4-bit quantized GGUF (with explicit local override)
+python main.py \
+  --model_id G3_4bit \
+  --gguf_path models/gguf/4bit/gemma-3-12b-it-Q4_K_M.gguf \
+  --data data/wmt24_filtered_100.jsonl \
+  --n_gpu_layers 40
+
+# 8-bit quantized GGUF
+python main.py \
+  --model_id G3_8bit \
+  --data data/wmt24_filtered_100.jsonl \
+  --n_gpu_layers 40
 ```
 
-To Run:
-
-```bash
-python plot_in_bin_statistics.py results/
-```

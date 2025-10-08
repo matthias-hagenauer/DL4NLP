@@ -4,7 +4,7 @@ import json
 import os
 
 from data import load_jsonl_pairs
-from model import build_model
+from model_test import build_model
 from eval import chrf_segment_scores, bleu_corpus, comet22_scores
 
 from binning import parse_bins, assign_bin, coerce_esa, quantile_bin_tuples, balance_bins
