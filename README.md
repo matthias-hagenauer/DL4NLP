@@ -160,9 +160,9 @@ bash get_gemini_gguf.sh
 
 ### Access & Setup for Gemma-3 (Hugging Face)
 
-`google/gemma-3-12b-it` is a gated model, so you must authenticate before first use.
+`google/gemma-3-4b-it` is a gated model, so you must authenticate before first use.
 1. Accept access terms
-Visit https://huggingface.co/google/gemma-3-12b-it and click “Access model” / “Accept license”.
+Visit [https://huggingface.co/google/gemma-3-4b-it](https://huggingface.co/google/gemma-3-4b-it) and click “Access model” / “Accept license”.
 
 2. Create a read token
 Go to Account → Acces tokens → New token → select read scope.
