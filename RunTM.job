@@ -1,11 +1,11 @@
 #!/bin/bash
 
-#SBATCH --partition=gpu_mig
+#SBATCH --partition=gpu_a100
 #SBATCH --gpus=1
 #SBATCH --job-name=RunTM
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=9
-#SBATCH --time=8:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=output/slurm_output_%A.out
 
 module purge
@@ -14,29 +14,28 @@ module load Miniconda3/24.7.1-0
 
 source activate nlp
 
-cd "$HOME/dl4nlp/DL4NLP" || { echo "Bad cd"; exit 1; }
+cd "$HOME/DL4NLP" || { echo "Bad cd"; exit 1; }
 
 # Baseline HuggingFace TowerMistral
 srun python main.py \
   --model_id TM \
-  --data data/wmt24_filtered_100.jsonl \
-  --metrics 
+  --data data/wmt24_estimated_normalized.jsonl \
 
 # 2-bit quantized GGUF (local if available, else HF)
 srun python main.py \
   --model_id TM_2bit \
-  --data data/wmt24_filtered_100.jsonl \
+  --data data/wmt24_estimated_normalized.jsonl \
   --n_gpu_layers 40
 
 # 4-bit quantized GGUF (with explicit local override)
 srun python main.py \
   --model_id TM_4bit \
   --gguf_path models/gguf/4bit/TowerInstruct-Mistral-7B-v0.2-Q4_K_M.gguf \
-  --data data/wmt24_filtered_100.jsonl \
+  --data data/wmt24_estimated_normalized.jsonl \
   --n_gpu_layers 40
 
 # 8-bit quantized GGUF
 srun python main.py \
   --model_id TM_8bit \
-  --data data/wmt24_filtered_100.jsonl \
+  --data data/wmt24_estimated_normalized.jsonl \
   --n_gpu_layers 40

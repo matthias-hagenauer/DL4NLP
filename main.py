@@ -143,7 +143,7 @@ def main():
                     default="interval",
                     help="interval*: equal-sized groups via data-driven fallback; quantile*: terciles. *_balanced marks overflow items as UNBINNED.")
     # COMET config
-    ap.add_argument("--eval_metrics", nargs="+", choices=["chrf", "bleu", "comet"], default=["chrf, comet"],
+    ap.add_argument("--eval_metrics", nargs="+", choices=["chrf", "bleu", "comet"], default=["chrf", "comet"],
                     help="Subset of metrics to compute.")
     ap.add_argument("--comet_gpus", type=int, default=1)
     ap.add_argument("--comet_batch", type=int, default=8)

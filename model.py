@@ -43,6 +43,13 @@ GGUF_DEFAULTS = {
     ),
 }
 
+# System prompt for strict translation-only behavior in Gemini
+STRICT_TRANSLATION_SYSTEM = (
+    "You are a translation engine. Translate the user-provided text from the "
+    "source language into the target language. Return ONLY the translation in "
+    "the target language — no explanations, no alternatives, no lists, no markdown."
+)
+
 LANG_NAME = {
     "en": "English",  "pt": "Portuguese", "es": "Spanish", "fr": "French",
     "de": "German",   "it": "Italian",    "nl": "Dutch",   "cs": "Czech",
@@ -50,28 +57,41 @@ LANG_NAME = {
     "ko": "Korean",   "ar": "Arabic",
 }
 
+
 def _lang_name(code):
     if not isinstance(code, str):
         return str(code)
     return LANG_NAME.get(code.lower(), code)
 
+
 def _build_prompt(tokenizer, src_text, src_lang, tgt_lang):
-    """Return a single-string prompt. If tokenizer has chat template, use it."""
-    content = (
-        "Translate the following text from {src} into {tgt}.\n"
-        "{src}: {text}\n"
-        "{tgt}:"
-    ).format(src=_lang_name(src_lang), tgt=_lang_name(tgt_lang), text=src_text)
+    """
+    Build either a chat-formatted prompt (preferred) or a plain string fallback.
+    Includes a strict system message to avoid enumerations/options.
+    """
+    src_name = _lang_name(src_lang)
+    tgt_name = _lang_name(tgt_lang)
+
+    user_content = (
+        f"Translate the following text from {src_name} into {tgt_name}.\n\n"
+        f"Source ({src_name}): {src_text}\n"
+        f"Target ({tgt_name}):"
+    )
 
     if tokenizer is not None and hasattr(tokenizer, "apply_chat_template"):
-        messages = [{"role": "user", "content": content}]
+        messages = [
+            {"role": "system", "content": STRICT_TRANSLATION_SYSTEM},
+            {"role": "user",   "content": user_content},
+        ]
         try:
             return tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
         except Exception:
-            pass
-    return content
+            pass  # fall back to plain string
+
+    return f"{STRICT_TRANSLATION_SYSTEM}\n\n{user_content}"
+
 
 def _collect_eos_ids(tokenizer):
     """Include regular EOS and chat end-of-message if present."""
@@ -118,46 +138,62 @@ class GGUFModel:
 
 
     def translate_batch(self, items, **gen_kwargs):
-        """Generate translations for a batch of items."""
         max_new_tokens = gen_kwargs.get("max_new_tokens", 256)
         do_sample      = gen_kwargs.get("do_sample", False)
         temperature    = (gen_kwargs.get("temperature", 0.7) if do_sample else 0.0)
 
         preds = []
         for it in items:
-            content = _build_prompt(None, it.get("src",""), it.get("src_lang","en"), it.get("tgt_lang","en"))
-
-            if self.has_chat:
-                # Use the model's chat template (recommended when available)
-                out = self.llm.create_chat_completion(
-                    messages=[{"role": "user", "content": content}],
-                    temperature=0.0,
-                    max_tokens=max_new_tokens,
+            try:
+                src = it.get("src", "")
+                src_name = _lang_name(it.get("src_lang", "en"))
+                tgt_name = _lang_name(it.get("tgt_lang", "en"))
+                user_content = (
+                    f"Translate the following text from {src_name} into {tgt_name}.\n\n"
+                    f"Source ({src_name}): {src}\n"
+                    f"Target ({tgt_name}):"
                 )
-                text = out["choices"][0]["message"]["content"]
-            else:
-                # Fallback: completion mode with stronger stops
-                out = self.llm.create_completion(
-                    prompt=content,
-                    max_tokens=max_new_tokens,
-                    temperature=temperature,
-                    stop=[
-                        "<|im_end|>",
-                        "\nEnglish:", "English:",
-                        "\nGerman:",  "German:",
-                        "\n\n", "</s>", "<|endoftext|>", "Assistant:",
-                    ],
-                )
-                text = out["choices"][0]["text"]
 
-            # Clean up output
-            target_label = _lang_name(it.get("tgt_lang",""))
-            label_str = f"{target_label}:"
-            if label_str in text:
-                text = text.split(label_str, 1)[-1]
-            text = re.split(r"(?:</s>|<\|endoftext\|>|Assistant:)", text)[0]
-            preds.append(text.strip().strip('"').strip("“”").strip())
+                if self.has_chat:
+                    out = self.llm.create_chat_completion(
+                        messages=[
+                            {"role": "system", "content": STRICT_TRANSLATION_SYSTEM},
+                            {"role": "user",   "content": user_content},
+                        ],
+                        temperature=0.0,
+                        max_tokens=max_new_tokens,
+                    )
+                    text = (out or {}).get("choices", [{}])[0].get("message", {}).get("content", "")
+                else:
+                    prompt = f"{STRICT_TRANSLATION_SYSTEM}\n\n{user_content}"
+                    out = self.llm.create_completion(
+                        prompt=prompt,
+                        max_tokens=max_new_tokens,
+                        temperature=temperature,
+                        stop=[
+                            "<|im_end|>",
+                            "\nEnglish:", "English:",
+                            "\nGerman:",  "German:",
+                            "\nUser:", "User:",
+                            "\nAssistant:", "Assistant:",
+                            "\n\n</s>", "</s>", "<|endoftext|>",
+                            "Option 1", "Option 2", "**Option", "Here are a few options",
+                        ],
+                    )
+                    text = (out or {}).get("choices", [{}])[0].get("text", "")
 
+                # Post-process
+                target_label = f"{tgt_name}:"
+                if target_label in text:
+                    text = text.split(target_label, 1)[-1]
+                text = re.sub(r"^Here (?:is|are)\b.*?:\s*", "", text, flags=re.IGNORECASE)
+                text = re.sub(r"^\*\*Option.*?\*\*:\s*", "", text, flags=re.IGNORECASE)
+                text = re.split(r"(?:</s>|<\|endoftext\|>|Assistant:)", text)[0]
+                pred = text.strip().strip('"').strip("“”").strip()
+                preds.append(pred)
+            except Exception:
+                # Ensure output length matches inputs even if a call fails
+                preds.append("")
         return preds
 
 
@@ -187,67 +223,61 @@ class HFPipelineModel:
         self._pad_id = getattr(self.tokenizer, "eos_token_id", None)
 
     def translate_batch(self, items, **gen_kwargs):
-        """
-        items: list of dicts with keys: 'src', 'src_lang', 'tgt_lang'
-        returns: list of translated strings (one per input)
-        """
-        # Deterministic, one hypothesis per input
         params = {
             "max_new_tokens": 128,
             "do_sample": False,
             "num_return_sequences": 1,
             "return_full_text": False,
-            "temperature": 0.0,  # redundant with do_sample=False, but explicit
+            "temperature": 0.0,
         }
-        # Stop at assistant turn end
         if self._eos_ids:
             params["eos_token_id"] = self._eos_ids if len(self._eos_ids) > 1 else self._eos_ids[0]
         if self._pad_id is not None:
             params["pad_token_id"] = self._pad_id
-
         params.update(gen_kwargs or {})
 
-        # Build prompts
+        # Prompts
         prompts = []
         for it in items:
-            src_text = it.get("src", "")
-            src_lang = it.get("src_lang", "en")
-            tgt_lang = it.get("tgt_lang", "en")
-            prompts.append(_build_prompt(self.tokenizer, src_text, src_lang, tgt_lang))
+            prompts.append(_build_prompt(self.tokenizer, it.get("src",""), it.get("src_lang","en"), it.get("tgt_lang","en")))
 
-        # Generate
-        outputs = self.pipe(prompts, **params)  # list[list[dict]]
+        # Generate (ALWAYS return a list the same length as items)
+        try:
+            outputs = self.pipe(prompts, **params)  # usually list[list[dict]]
+        except Exception:
+            return [""] * len(items)
 
-        # Post-process → exactly one line per input
         preds = []
-        for prompt, out, it in zip(prompts, outputs, items):
-            text = ""
-            if out and isinstance(out, list) and isinstance(out[0], dict):
-                text = out[0].get("generated_text", "") or ""
+        for prompt, out, it in zip(prompts, outputs if isinstance(outputs, list) else [outputs], items):
+            try:
+                text = ""
+                if isinstance(out, list) and out and isinstance(out[0], dict):
+                    text = out[0].get("generated_text", "") or ""
+                elif isinstance(out, dict):
+                    text = out.get("generated_text", "") or ""
 
-            cont = text[len(prompt):] if text.startswith(prompt) else text
+                cont = text[len(prompt):] if text.startswith(prompt) else text
 
-            # Strip a single echoed "TargetLang:" if present
-            tgt_label = f"{_lang_name(it.get('tgt_lang', ''))}:"
-            if tgt_label in cont:
-                cont = cont.split(tgt_label, 1)[-1]
+                tgt_label = f"{_lang_name(it.get('tgt_lang',''))}:"
+                if tgt_label in cont:
+                    cont = cont.split(tgt_label, 1)[-1]
 
-            # Hard stops: end-of-message markers or fake new turns
-            cont = re.split(
-                r"(?:<\|im_end\|>|</s>|<\|endoftext\|>|\n<\|im_start\|>user|\n\s*User:|\n\s*Assistant:)",
-                cont,
-                maxsplit=1,
-            )[0]
-            # Also cut if the source-language label reappears
-            src_label = f"{_lang_name(it.get('src_lang', ''))}:"
-            cont = cont.split(src_label, 1)[0]
+                cont = re.sub(r"^Here (?:is|are)\b.*?:\s*", "", cont, flags=re.IGNORECASE)
+                cont = re.sub(r"^\*\*Option.*?\*\*:\s*", "", cont, flags=re.IGNORECASE)
 
-            # Keep only the first non-empty line
-            first_line = next((ln for ln in cont.strip().splitlines() if ln.strip()), "")
-            pred = first_line.strip().strip('"').strip("“”").strip()
-            preds.append(pred)
+                cont = re.split(
+                    r"(?:<\|im_end\|>|</s>|<\|endoftext\|>|\n<\|im_start\|>user|\n\s*User:|\n\s*Assistant:)",
+                    cont,
+                    maxsplit=1,
+                )[0]
 
+                paragraphs = [p.strip() for p in cont.strip().split("\n\n") if p.strip()]
+                pred = (paragraphs[0] if paragraphs else "").strip().strip('"').strip("“”").strip()
+                preds.append(pred)
+            except Exception:
+                preds.append("")
         return preds
+        
 
 def build_model(model_id=None, device_map="auto",
                 gguf_repo=None, gguf_file=None, gguf_path=None,
