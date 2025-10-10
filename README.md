@@ -236,7 +236,7 @@ python main.py \
 # 4-bit quantized GGUF (with explicit local override)
 python main.py \
   --model_id G3_4bit \
-  --gguf_path models/gguf/4bit/gemma-3-12b-it-Q4_K_M.gguf \
+  --gguf_path models/gguf/4bit/gemma-3-4b-it-Q4_K_M.gguf \
   --data data/wmt24_filtered_100.jsonl \
   --n_gpu_layers 40
 
